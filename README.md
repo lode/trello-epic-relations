@@ -55,6 +55,8 @@ To **remove a relation**, open _the task card_, click the 'epic' card button on 
 Note, every add/remove action is automatically synced to the related card.
 This works across boards within the same organization as well. Even if those boards don't have the plugin installed.
 
+Be aware that **you can't (yet) manually change the checklist or card attachment**. Always use the card buttons to do so.
+
 
 ## Contributing
 
