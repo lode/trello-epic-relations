@@ -3,8 +3,8 @@
 var Promise = TrelloPowerUp.Promise;
 
 const CDN_BASE_URL = document.getElementById('js-cdn-base-url').href;
-const ICON_UP      = CDN_BASE_URL + 'icon-up.png?v=1623877885829';
-const ICON_DOWN    = CDN_BASE_URL + 'icon-down.png?v=1623877884003';
+const ICON_UP      = CDN_BASE_URL + 'icon-up.png';
+const ICON_DOWN    = CDN_BASE_URL + 'icon-down.png';
 const LIST_MAXIMUM = 10;
 
 function getParentByAttachmentId(t, parentAttachmentId) {
@@ -742,7 +742,7 @@ function initializeAuthorization(t) {
 function startAuthorization(t) {
 	return t.popup({
 		title:  'My Auth Popup',
-		height: 150,
+		height: 170,
 		url:    './authorize.html',
 		args:   {
 			apiKey: '9b174ff1ccf5ca94f1c181bc3d802d4b',
