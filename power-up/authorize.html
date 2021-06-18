@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<link rel="stylesheet" href="https://p.trellocdn.com/power-up.min.css">
+		<script src="https://p.trellocdn.com/power-up.min.js"></script>
+	</head>
+	<body>
+		<h1>
+			Hey there! 😀
+		</h1>
+		<p>
+			EPIC relations are stored in checklists. To be able to manage them, we need you to authorize us to access your Trello account.
+		</p>
+		<button id="auth-btn" type="submit" class="mod-primary">Authorize access to Trello</button>
+		
+		<script>
+			const Promise = TrelloPowerUp.Promise;
+			const t = TrelloPowerUp.iframe();
+			
+			const currentUrl      = window.location.toString();
+			const baseUrl         = currentUrl.substring(0, currentUrl.lastIndexOf('/'));
+			const queryParameters = new URLSearchParams({
+				key:             t.arg('apiKey'),
+				expiration:      'never',
+				name:            'EPIC relations',
+				scope:           'read,write',
+				callback_method: 'fragment',
+				return_url:      baseUrl + '/auth-success.html',
+			});
+			
+			const trelloAuthUrl = 'https://trello.com/1/authorize?' + queryParameters.toString();
+			
+			function tokenLooksValid(token) {
+				return /^[0-9a-f]{64}$/.test(token);
+			}
+			
+			document.getElementById('auth-btn').addEventListener('click', function() {
+				const options = {
+					height:     680,
+					width:      580,
+					validToken: tokenLooksValid,
+				};
+				
+				t.authorize(trelloAuthUrl, options).then(function(token) {
+					t.set('member', 'private', 'token', token).then(function() {
+						t.closePopup();
+					});
+				});
+			});
+		</script>
+	</body>
+</html>
