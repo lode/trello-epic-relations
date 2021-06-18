@@ -160,6 +160,11 @@ async function searchCards(t, options, parentOrChild, callback) {
 					return (card.shortLink === searchShortLink);
 				});
 				
+				// skip self
+				if (matchingCard.id === t.getContext().card) {
+					return [];
+				}
+				
 				// get the card from another board
 				if (matchingCard === undefined) {
 					matchingCard = await getCardByShortLink(t, searchShortLink);
@@ -177,8 +182,11 @@ async function searchCards(t, options, parentOrChild, callback) {
 		}
 		else {
 			resolve(t.cards('id', 'name', 'url', 'shortLink', 'dateLastActivity').then(async function(cards) {
-				// skip already added cards
+				// skip self and already added cards
 				cards = cards.filter(function(card) {
+					if (t.getContext().card === card.id) {
+						return false;
+					}
 					if (parentCardId !== undefined && parentCardId === card.shortLink) {
 						return false;
 					}
