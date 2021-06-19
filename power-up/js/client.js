@@ -13,6 +13,11 @@ function getParentByAttachmentId(t, parentAttachmentId) {
 			return (attachment.id === parentAttachmentId);
 		});
 		
+		// if the attachment was removed manually
+		if (parentAttachment === undefined) {
+			return undefined;
+		}
+		
 		const parentCardId = getCardIdFromUrl(parentAttachment.url);
 		
 		return parentCardId;
@@ -363,20 +368,9 @@ function removeParentAttachment(t, childCardId, parentAttachmentId) {
 	try {
 		return window.Trello.delete('cards/' + childCardId + '/attachments/' + parentAttachmentId, {}, null,
 		function(error) {
-			// cleanup in case the attachment got removed manually
-			const attachmentIsMissing = (error.status === 404 && error.responseText.indexOf('Could not find the specified attachment') !== -1);
-			const contextIsChildCard  = (childCardId === t.getContext().card);
-			if (attachmentIsMissing && contextIsChildCard) {
-				t.remove('card', 'shared', 'parentAttachmentId');
-				t.alert({
-					message: 'Did you remove the EPIC attachment yourself? That\'s okay, all cleaned up.',
-				});
-			}
-			else {
-				t.alert({
-					message: JSON.stringify(error, null, '\t'),
-				});
-			}
+			t.alert({
+				message: JSON.stringify(error, null, '\t'),
+			});
 		});
 	}
 	catch (error) {
@@ -623,6 +617,18 @@ function showParentState(t, badgeType) {
 		
 		if (badgeType === 'card-detail-badges') {
 			const parentCardId = await getParentByAttachmentId(t, parentAttachmentId);
+			
+			// cleanup in case the attachment got removed manually
+			// @todo store the parent card id in the child as well to allow auto cleaning up of the child link from the parent's checklist
+			if (parentCardId === undefined) {
+				t.remove('card', 'shared', 'parentAttachmentId');
+				t.alert({
+					message:  'Please open the EPIC and remove the checkitem to this task. Note: this happens automatically if you use the card button to remove the EPIC.',
+					duration: 15,
+				});
+				
+				return {};
+			}
 			
 			return initializeAuthorization(t).then(async function(isAuthorized) {
 				let badge = {
