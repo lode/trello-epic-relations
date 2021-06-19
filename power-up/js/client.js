@@ -669,7 +669,7 @@ function showParentState(t, badgeType) {
 	});
 }
 
-async function showChildrenState(t, badgeType) {
+function showChildrenState(t, badgeType) {
 	// process queue
 	const cardId = t.getContext().card;
 	t.get('organization', 'shared', 'childrenChecklistId-' + cardId).then(function(childrenChecklistId) {
@@ -707,7 +707,7 @@ async function showChildrenState(t, badgeType) {
 		});
 	});
 	
-	return await t.get('card', 'shared', 'childrenChecklistId').then(async function(childrenChecklistId) {
+	return t.get('card', 'shared', 'childrenChecklistId').then(async function(childrenChecklistId) {
 		if (childrenChecklistId === undefined) {
 			return {};
 		}
