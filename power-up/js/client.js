@@ -783,24 +783,12 @@ TrelloPowerUp.initialize({
 		return [
 			{
 				dynamic: function() {
-					const promises = [
-						showParentState(t, options.context.command),
-					];
-					
-					return Promise.all(promises).then(function(badges) {
-						return badges[0];
-					});
+					return showParentState(t, options.context.command);
 				},
 			},
 			{
 				dynamic: function() {
-					const promises = [
-						showChildrenState(t, options.context.command),
-					];
-					
-					return Promise.all(promises).then(function(badges) {
-						return badges[0];
-					});
+					return showChildrenState(t, options.context.command);
 				},
 			},
 		];
@@ -809,24 +797,12 @@ TrelloPowerUp.initialize({
 		return [
 			{
 				dynamic: function() {
-					const promises = [
-						showParentState(t, options.context.command),
-					];
-					
-					return Promise.all(promises).then(function(badges) {
-						return badges[0];
-					});
+					return showParentState(t, options.context.command);
 				},
 			},
 			{
 				dynamic: function() {
-					const promises = [
-						showChildrenState(t, options.context.command),
-					];
-					
-					return Promise.all(promises).then(function(badges) {
-						return badges[0];
-					});
+					return showChildrenState(t, options.context.command);
 				},
 			},
 		];
