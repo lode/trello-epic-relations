@@ -166,7 +166,7 @@ async function searchCards(t, options, parentOrChild, callback) {
 				});
 				
 				// skip self
-				if (matchingCard.id === t.getContext().card) {
+				if (matchingCard !== undefined && matchingCard.id === t.getContext().card) {
 					return [];
 				}
 				
