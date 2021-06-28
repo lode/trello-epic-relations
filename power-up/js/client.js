@@ -421,8 +421,9 @@ async function removeParentFromContext(t, parentAttachmentId) {
 			return (childCheckItemShortLink === card.shortLink);
 		});
 		
-		removeChildCheckItem(t, childrenChecklistId, childCheckItem.id);
-		markToRecountOnRelatedParent(t, parentCard.id);
+		removeChildCheckItem(t, childrenChecklistId, childCheckItem.id).then(function() {
+			markToRecountOnRelatedParent(t, parentCard.id);
+		});
 	});
 }
 
@@ -486,10 +487,11 @@ async function addChildToContext(t, childCard) {
 		}
 		
 		addChildCheckItem(t, childCard, childrenChecklistId).then(async function(response) {
+			recountChildrenByContext(t);
+			
 			const parentCard  = await t.card('id', 'name', 'url');
 			const childCardId = childCard.id;
 			addParentToRelatedChild(t, parentCard, childCardId);
-			markToRecountOnContext(t);
 		});
 	});
 }
@@ -538,8 +540,9 @@ async function addChildToRelatedParent(t, childCard, parentCardId) {
 		t.set('organization', 'shared', 'childrenChecklistId-' + parentCardId, childrenChecklistId);
 	}
 	
-	addChildCheckItem(t, childCard, childrenChecklistId);
-	markToRecountOnRelatedParent(t, parentCardId);
+	addChildCheckItem(t, childCard, childrenChecklistId).then(function() {
+		markToRecountOnRelatedParent(t, parentCardId);
+	});
 }
 
 /**
@@ -630,7 +633,7 @@ function removeChildrenFromContext(t) {
 		// remove children checklist from parent
 		const parentCardIdOrShortLink = t.getContext().card;
 		removeChildrenChecklist(t, parentCardIdOrShortLink, childrenChecklistId).then(function() {
-			markToRecountOnContext(t);
+			recountChildrenByContext(t);
 			t.remove('card', 'shared', 'childrenChecklistId');
 		})
 	});
@@ -817,13 +820,6 @@ function showParentState(t, badgeType) {
 
 /**
  * @param  {object} t context
- */
-function markToRecountOnContext(t) {
-	t.set('card', 'shared', 'childrenChecklistReCount', true);
-}
-
-/**
- * @param  {object} t context
  * @param  {string} parentCardId
  */
 function markToRecountOnRelatedParent(t, parentCardId) {
@@ -838,6 +834,8 @@ function markToRecountOnRelatedParent(t, parentCardId) {
 function recountChildrenByContext(t) {
 	t.get('card', 'shared', 'childrenChecklistId').then(function(childrenChecklistId) {
 		if (childrenChecklistId === undefined) {
+			// re-try since the checklist isn't there yet
+			markToRecountOnRelatedParent(t, t.getContext().card);
 			return;
 		}
 		
@@ -890,13 +888,6 @@ function showChildrenState(t, badgeType) {
 			});
 		}
 	});
-	
-	t.get('card', 'shared', 'childrenChecklistReCount').then(function(childrenChecklistReCount) {
-		if (childrenChecklistReCount !== undefined) {
-			t.remove('card', 'shared', 'childrenChecklistReCount');
-			recountChildrenByContext(t);
-		}
-	})
 	t.get('organization', 'shared', 'childrenChecklistReCount-' + cardId).then(function(childrenChecklistReCount) {
 		if (childrenChecklistReCount !== undefined) {
 			t.remove('organization', 'shared', 'childrenChecklistReCount-' + cardId);
@@ -910,19 +901,25 @@ function showChildrenState(t, badgeType) {
 		}
 		
 		const counts = await t.get('card', 'shared', 'childrenCounts');
+		if (counts === undefined) {
+			// sometimes we're too early
+			// don't mark to recount since the recounter will already re-try
+			// and we'll do it on the wrong moment
+			return {};
+		}
 		
 		if (badgeType === 'card-detail-badges') {
 			return {
 				title: 'Tasks',
-				text:  (counts !== undefined) ? counts.done + '/' + counts.total : '...',
-				color: (counts !== undefined && counts.done > 0 && counts.done === counts.total) ? 'green' : 'light-gray',
+				text:  counts.done + '/' + counts.total,
+				color: (counts.done > 0 && counts.done === counts.total) ? 'green' : 'light-gray',
 			};
 		}
 		else {
 			return {
 				icon:  ICON_DOWN,
-				text:  (counts !== undefined) ? counts.done + '/' + counts.total + ' tasks' : '...',
-				color: (counts !== undefined && counts.done > 0 && counts.done === counts.total) ? 'green' : 'light-gray',
+				text:  counts.done + '/' + counts.total + ' tasks',
+				color: (counts.done > 0 && counts.done === counts.total) ? 'green' : 'light-gray',
 			};
 		}
 	});
