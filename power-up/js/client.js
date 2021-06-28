@@ -405,12 +405,12 @@ async function removeParentFromContext(t, parentAttachmentId) {
 		removeParentAttachment(t, childCardIdOrShortLink, parentAttachmentId);
 		
 		const parentCardShortLink = getCardShortLinkFromUrl(parentAttachment.url);
+		const parentCard          = await getCardByIdOrShortLink(t, parentCardShortLink);
 		let childrenChecklistId   = await getChildrenChecklistIdOfRelatedParent(t, parentCardShortLink);
 		
 		// parent is on another board, and the plugindata isn't connected yet
 		// get checklist from organization level plugindata instead
 		if (childrenChecklistId === undefined) {
-			const parentCard    = await getCardByIdOrShortLink(t, parentCardShortLink);
 			childrenChecklistId = await t.get('organization', 'shared', 'childrenChecklistId-' + parentCard.id);
 		}
 		
@@ -422,6 +422,7 @@ async function removeParentFromContext(t, parentAttachmentId) {
 		});
 		
 		removeChildCheckItem(t, childrenChecklistId, childCheckItem.id);
+		markToRecountOnRelatedParent(t, parentCard.id);
 	});
 }
 
@@ -488,6 +489,7 @@ async function addChildToContext(t, childCard) {
 			const parentCard  = await t.card('id', 'name', 'url');
 			const childCardId = childCard.id;
 			addParentToRelatedChild(t, parentCard, childCardId);
+			markToRecountOnContext(t);
 		});
 	});
 }
@@ -537,6 +539,7 @@ async function addChildToRelatedParent(t, childCard, parentCardId) {
 	}
 	
 	addChildCheckItem(t, childCard, childrenChecklistId);
+	markToRecountOnRelatedParent(t, parentCardId);
 }
 
 /**
@@ -627,6 +630,7 @@ function removeChildrenFromContext(t) {
 		// remove children checklist from parent
 		const parentCardIdOrShortLink = t.getContext().card;
 		removeChildrenChecklist(t, parentCardIdOrShortLink, childrenChecklistId).then(function() {
+			markToRecountOnContext(t);
 			t.remove('card', 'shared', 'childrenChecklistId');
 		})
 	});
@@ -811,6 +815,43 @@ function showParentState(t, badgeType) {
 	});
 }
 
+function markToRecountOnContext(t) {
+	t.set('card', 'shared', 'childrenChecklistReCount', true);
+}
+
+function markToRecountOnRelatedParent(t, parentCardId) {
+	t.set('organization', 'shared', 'childrenChecklistReCount-' + parentCardId, true);
+}
+
+function recountChildrenByContext(t) {
+	t.get('card', 'shared', 'childrenChecklistId').then(function(childrenChecklistId) {
+		if (childrenChecklistId === undefined) {
+			return;
+		}
+		
+		initializeAuthorization(t).then(function(isAuthorized) {
+			if (isAuthorized === false) {
+				return;
+			}
+			
+			getCheckItemsFromRelatedParent(t, childrenChecklistId).then(function(checkItems) {
+				let counts = {
+					total: checkItems.length,
+					done:  0,
+				};
+				
+				for (let checkItem of checkItems) {
+					if (checkItem.state === 'complete') {
+						counts.done++;
+					}
+				}
+				
+				t.set('card', 'shared', 'childrenCounts', counts);
+			});
+		});
+	});
+}
+
 /**
  * @param  {object} t context
  * @param  {string} badgeType one of 'card-badges' or 'card-detail-badges'
@@ -838,32 +879,18 @@ function showChildrenState(t, badgeType) {
 		}
 	});
 	
-	t.get('card', 'shared', 'childrenChecklistId').then(function(childrenChecklistId) {
-		if (childrenChecklistId === undefined) {
-			return;
+	t.get('card', 'shared', 'childrenChecklistReCount').then(function(childrenChecklistReCount) {
+		if (childrenChecklistReCount !== undefined) {
+			t.remove('card', 'shared', 'childrenChecklistReCount');
+			recountChildrenByContext(t);
 		}
-		
-		initializeAuthorization(t).then(function(isAuthorized) {
-			if (isAuthorized === false) {
-				return;
-			}
-			
-			getCheckItemsFromRelatedParent(t, childrenChecklistId).then(function(checkItems) {
-				let counts = {
-					total: checkItems.length,
-					done:  0,
-				};
-				
-				for (let checkItem of checkItems) {
-					if (checkItem.state === 'complete') {
-						counts.done++;
-					}
-				}
-				
-				t.set('card', 'shared', 'childrenCounts', counts);
-			});
-		});
-	});
+	})
+	t.get('organization', 'shared', 'childrenChecklistReCount-' + cardId).then(function(childrenChecklistReCount) {
+		if (childrenChecklistReCount !== undefined) {
+			t.remove('organization', 'shared', 'childrenChecklistReCount-' + cardId);
+			recountChildrenByContext(t);
+		}
+	})
 	
 	return t.get('card', 'shared', 'childrenChecklistId').then(async function(childrenChecklistId) {
 		if (childrenChecklistId === undefined) {
