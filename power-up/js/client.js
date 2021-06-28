@@ -186,122 +186,120 @@ async function searchCards(t, options, parentOrChild, callback) {
 		}
 	});
 	
-	return new Promise(function (resolve) {
-		// offer to add by card link
-		if (searchTerm !== '' && searchTerm.indexOf('https://trello.com/c/') === 0) {
-			resolve(t.cards('id', 'name', 'url', 'shortLink').then(async function(cards) {
-				const searchShortLink = getCardShortLinkFromUrl(searchTerm);
-				
-				// skip already added cards
-				if (parentCardShortLink !== undefined && parentCardShortLink === searchShortLink) {
-					return [];
-				}
-				if (childCardShortLinks !== undefined && childCardShortLinks.includes(searchShortLink)) {
-					return [];
-				}
-				
-				// try to find the title of the linked card
-				let matchingCard = cards.find(function(card) {
-					return (card.shortLink === searchShortLink);
-				});
-				
-				// skip self
-				if (matchingCard !== undefined && matchingCard.id === t.getContext().card) {
-					return [];
-				}
-				
-				// get the card from another board
-				if (matchingCard === undefined) {
-					matchingCard = await getCardByIdOrShortLink(t, searchShortLink);
-				}
-				
-				return [
-					{
-						text: matchingCard.name,
-						callback: function(t, options) {
-							callback(t, matchingCard);
-						},
+	// offer to add by card link
+	if (searchTerm !== '' && searchTerm.indexOf('https://trello.com/c/') === 0) {
+		return t.cards('id', 'name', 'url', 'shortLink').then(async function(cards) {
+			const searchShortLink = getCardShortLinkFromUrl(searchTerm);
+			
+			// skip already added cards
+			if (parentCardShortLink !== undefined && parentCardShortLink === searchShortLink) {
+				return [];
+			}
+			if (childCardShortLinks !== undefined && childCardShortLinks.includes(searchShortLink)) {
+				return [];
+			}
+			
+			// try to find the title of the linked card
+			let matchingCard = cards.find(function(card) {
+				return (card.shortLink === searchShortLink);
+			});
+			
+			// skip self
+			if (matchingCard !== undefined && matchingCard.id === t.getContext().card) {
+				return [];
+			}
+			
+			// get the card from another board
+			if (matchingCard === undefined) {
+				matchingCard = await getCardByIdOrShortLink(t, searchShortLink);
+			}
+			
+			return [
+				{
+					text: matchingCard.name,
+					callback: function(t, options) {
+						callback(t, matchingCard);
 					},
-				];
-			}));
-		}
-		else {
-			resolve(t.cards('id', 'name', 'url', 'shortLink', 'dateLastActivity').then(async function(cards) {
-				// skip self and already added cards
-				cards = cards.filter(function(card) {
-					if (t.getContext().card === card.id) {
-						return false;
-					}
-					if (parentCardShortLink !== undefined && parentCardShortLink === card.shortLink) {
-						return false;
-					}
-					if (childCardShortLinks !== undefined && childCardShortLinks.includes(card.shortLink)) {
-						return false;
-					}
-					
-					return true;
-				});
+				},
+			];
+		});
+	}
+	else {
+		return t.cards('id', 'name', 'url', 'shortLink', 'dateLastActivity').then(async function(cards) {
+			// skip self and already added cards
+			cards = cards.filter(function(card) {
+				if (t.getContext().card === card.id) {
+					return false;
+				}
+				if (parentCardShortLink !== undefined && parentCardShortLink === card.shortLink) {
+					return false;
+				}
+				if (childCardShortLinks !== undefined && childCardShortLinks.includes(card.shortLink)) {
+					return false;
+				}
 				
-				// filter by search term
-				if (searchTerm !== '') {
-					cards = cards.filter(function(card) {
-						return (card.name.toLowerCase().indexOf(searchTerm.toLowerCase()) !== -1);
+				return true;
+			});
+			
+			// filter by search term
+			if (searchTerm !== '') {
+				cards = cards.filter(function(card) {
+					return (card.name.toLowerCase().indexOf(searchTerm.toLowerCase()) !== -1);
+				});
+			}
+			
+			// favor most recent touched cards
+			cards.sort(function(cardA, cardB) {
+				return (cardA.dateLastActivity < cardB.dateLastActivity) ? 1 : -1;
+			});
+			
+			// don't process too much
+			cards = cards.slice(0, LIST_MAXIMUM);
+			
+			// create list items
+			cards = cards.map(function(card) {
+				return {
+					text: card.name,
+					callback: function(t, options) {
+						callback(t, card);
+					},
+				};
+			});
+			
+			// add remove buttons
+			if (searchTerm === '') {
+				if (parentOrChild === 'parent') {
+					await t.get('card', 'shared', 'parentAttachmentId').then(function(parentAttachmentId) {
+						if (parentAttachmentId !== undefined) {
+							cards.push({
+								text:     '× Remove current EPIC',
+								callback: function(t, options) {
+									removeParentFromContext(t, parentAttachmentId);
+									t.closePopup();
+								},
+							});
+						}
 					});
 				}
 				
-				// favor most recent touched cards
-				cards.sort(function(cardA, cardB) {
-					return (cardA.dateLastActivity < cardB.dateLastActivity) ? 1 : -1;
-				});
-				
-				// don't process too much
-				cards = cards.slice(0, LIST_MAXIMUM);
-				
-				// create list items
-				cards = cards.map(function(card) {
-					return {
-						text: card.name,
-						callback: function(t, options) {
-							callback(t, card);
-						},
-					};
-				});
-				
-				// add remove buttons
-				if (searchTerm === '') {
-					if (parentOrChild === 'parent') {
-						await t.get('card', 'shared', 'parentAttachmentId').then(function(parentAttachmentId) {
-							if (parentAttachmentId !== undefined) {
-								cards.push({
-									text:     '× Remove current EPIC',
-									callback: function(t, options) {
-										removeParentFromContext(t, parentAttachmentId);
-										t.closePopup();
-									},
-								});
-							}
-						});
-					}
-					
-					if (parentOrChild === 'child') {
-						await t.get('card', 'shared', 'childrenChecklistId').then(function(childrenChecklistId) {
-							if (childrenChecklistId !== undefined) {
-								cards.push({
-									text:     '× Remove all tasks (remove the EPIC from the task card to remove a single task)',
-									callback: function(t, options) {
-										removeChildrenFromContext(t);
-										t.closePopup();
-									},
-								});
-							}
-						});
-					}
+				if (parentOrChild === 'child') {
+					await t.get('card', 'shared', 'childrenChecklistId').then(function(childrenChecklistId) {
+						if (childrenChecklistId !== undefined) {
+							cards.push({
+								text:     '× Remove all tasks (remove the EPIC from the task card to remove a single task)',
+								callback: function(t, options) {
+									removeChildrenFromContext(t);
+									t.closePopup();
+								},
+							});
+						}
+					});
 				}
-				
-				return cards;
-			}));
-		}
-	});
+			}
+			
+			return cards;
+		});
+	}
 }
 
 /**
