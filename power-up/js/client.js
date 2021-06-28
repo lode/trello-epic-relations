@@ -815,14 +815,26 @@ function showParentState(t, badgeType) {
 	});
 }
 
+/**
+ * @param  {object} t context
+ */
 function markToRecountOnContext(t) {
 	t.set('card', 'shared', 'childrenChecklistReCount', true);
 }
 
+/**
+ * @param  {object} t context
+ * @param  {string} parentCardId
+ */
 function markToRecountOnRelatedParent(t, parentCardId) {
 	t.set('organization', 'shared', 'childrenChecklistReCount-' + parentCardId, true);
 }
 
+/**
+ * re-count the number of (completed) children
+ * 
+ * @param  {object} t context
+ */
 function recountChildrenByContext(t) {
 	t.get('card', 'shared', 'childrenChecklistId').then(function(childrenChecklistId) {
 		if (childrenChecklistId === undefined) {
