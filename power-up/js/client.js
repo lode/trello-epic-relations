@@ -631,8 +631,9 @@ function removeChildrenFromContext(t) {
 		// remove children checklist from parent
 		const parentCardIdOrShortLink = t.getContext().card;
 		removeChildrenChecklist(t, parentCardIdOrShortLink, childrenChecklistId).then(function() {
-			recountChildrenByContext(t);
-			t.remove('card', 'shared', 'childrenChecklistId');
+			t.remove('card', 'shared', 'childrenChecklistId').then(function() {
+				recountChildrenByContext(t);
+			});
 		})
 	});
 }
