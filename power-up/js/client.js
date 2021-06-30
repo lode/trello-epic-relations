@@ -420,7 +420,7 @@ async function removeParentFromContext(t, parentAttachmentId) {
 		});
 		
 		removeChildCheckItem(t, childrenChecklistId, childCheckItem.id).then(function() {
-			markToRecountOnRelatedParent(t, parentCard.id);
+			markToRecacheOnRelatedParent(t, parentCard.id);
 		});
 	});
 }
@@ -485,7 +485,7 @@ async function addChildToContext(t, childCard) {
 		}
 		
 		addChildCheckItem(t, childCard, childrenChecklistId).then(async function(response) {
-			recountChildrenByContext(t);
+			recacheChildrenByContext(t);
 			
 			const parentCard  = await t.card('id', 'name', 'url');
 			const childCardId = childCard.id;
@@ -539,7 +539,7 @@ async function addChildToRelatedParent(t, childCard, parentCardId) {
 	}
 	
 	addChildCheckItem(t, childCard, childrenChecklistId).then(function() {
-		markToRecountOnRelatedParent(t, parentCardId);
+		markToRecacheOnRelatedParent(t, parentCardId);
 	});
 }
 
@@ -632,7 +632,7 @@ function removeChildrenFromContext(t) {
 		const parentCardIdOrShortLink = t.getContext().card;
 		removeChildrenChecklist(t, parentCardIdOrShortLink, childrenChecklistId).then(function() {
 			t.remove('card', 'shared', 'childrenChecklistId').then(function() {
-				recountChildrenByContext(t);
+				recacheChildrenByContext(t);
 			});
 		})
 	});
@@ -821,16 +821,18 @@ function showParentState(t, badgeType) {
  * @param  {object} t context
  * @param  {string} parentCardId
  */
-function markToRecountOnRelatedParent(t, parentCardId) {
-	t.set('organization', 'shared', 'childrenChecklistReCount-' + parentCardId, true);
+function markToRecacheOnRelatedParent(t, parentCardId) {
+	t.set('organization', 'shared', 'childrenChecklistRecache-' + parentCardId, true);
 }
 
 /**
- * re-count the number of (completed) children
+ * recache data on the parent card
+ * 
+ * - the number of (completed) children
  * 
  * @param  {object} t context
  */
-function recountChildrenByContext(t) {
+function recacheChildrenByContext(t) {
 	t.get('card', 'shared', 'childrenChecklistId').then(function(childrenChecklistId) {
 		if (childrenChecklistId === undefined) {
 			// re-try since the checklist isn't there yet
@@ -887,10 +889,10 @@ function showChildrenState(t, badgeType) {
 			});
 		}
 	});
-	t.get('organization', 'shared', 'childrenChecklistReCount-' + cardId).then(function(childrenChecklistReCount) {
-		if (childrenChecklistReCount !== undefined) {
-			t.remove('organization', 'shared', 'childrenChecklistReCount-' + cardId);
-			recountChildrenByContext(t);
+	t.get('organization', 'shared', 'childrenChecklistRecache-' + cardId).then(function(childrenChecklistRecache) {
+		if (childrenChecklistRecache !== undefined) {
+			t.remove('organization', 'shared', 'childrenChecklistRecache-' + cardId);
+			recacheChildrenByContext(t);
 		}
 	})
 	
@@ -902,7 +904,7 @@ function showChildrenState(t, badgeType) {
 		const counts = await t.get('card', 'shared', 'childrenCounts');
 		if (counts === undefined) {
 			// sometimes we're too early
-			// don't mark to recount since the recounter will already re-try
+			// don't mark to recache since the recacher will already re-try
 			// and we'll do it on the wrong moment
 			return {};
 		}
