@@ -838,12 +838,23 @@ function markToRecacheOnRelatedParent(t, parentCardId) {
  * - the number of (completed) children
  * 
  * @param  {object} t context
+ * @param  {number} retries
  */
-function recacheChildrenByContext(t) {
+function recacheChildrenByContext(t, retries=3) {
 	t.get('card', 'shared', 'childrenChecklistId').then(function(childrenChecklistId) {
 		if (childrenChecklistId === undefined) {
 			// re-try since the checklist isn't there yet
-			markToRecountOnRelatedParent(t, t.getContext().card);
+			if (retries > 0) {
+				setTimeout(function() {
+					retries -= 1;
+					recacheChildrenByContext(t, retries);
+				}, 250);
+			}
+			else {
+				t.set('card', 'shared', 'childrenCounts', {});
+				t.set('card', 'shared', 'childrenShortLinks', []);
+			}
+			
 			return;
 		}
 		
