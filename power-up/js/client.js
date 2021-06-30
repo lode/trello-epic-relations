@@ -175,16 +175,8 @@ async function searchCards(t, options, parentOrChild, callback) {
 		}
 	});
 	
-	// collect current children
-	let childCardShortLinks = [];
-	await t.get('card', 'shared', 'childrenChecklistId').then(async function(childrenChecklistId) {
-		if (childrenChecklistId !== undefined) {
-			const checkItems = await getCheckItemsFromRelatedParent(t, childrenChecklistId);
-			for (let checkItem of checkItems) {
-				childCardShortLinks.push(getCardShortLinkFromUrl(checkItem.name));
-			}
-		}
-	});
+	// get current children
+	const childCardShortLinks = await t.get('card', 'shared', 'childrenShortLinks');
 	
 	// offer to add by card link
 	if (searchTerm !== '' && searchTerm.indexOf('https://trello.com/c/') === 0) {
@@ -420,7 +412,7 @@ async function removeParentFromContext(t, parentAttachmentId) {
 		});
 		
 		removeChildCheckItem(t, childrenChecklistId, childCheckItem.id).then(function() {
-			markToRecountOnRelatedParent(t, parentCard.id);
+			markToRecacheOnRelatedParent(t, parentCard.id);
 		});
 	});
 }
@@ -463,6 +455,7 @@ function removeParentAttachment(t, childCardIdOrShortLink, parentAttachmentId) {
  * @param {object} t context
  * @param {object} childCard {
  *        @var {string} id
+ *        @var {string} shortLink
  *        @var {string} url
  * }
  */
@@ -476,6 +469,19 @@ async function addChildToContext(t, childCard) {
 		return;
 	}
 	
+	// already set the new shortlink in the cache
+	// this will be done further down via the recache as well
+	// but that is not fast enough to notice when opening the search directly
+	t.get('card', 'shared', 'childrenShortLinks').then(function(childrenShortLinks) {
+		if (childrenShortLinks === undefined) {
+			childrenShortLinks = [];
+		}
+		
+		childrenShortLinks.push(childCard.shortLink);
+		
+		t.set('card', 'shared', 'childrenShortLinks', childrenShortLinks);
+	})
+	
 	t.get('card', 'shared', 'childrenChecklistId').then(async function(childrenChecklistId) {
 		if (childrenChecklistId === undefined) {
 			const parentCardIdOrShortLink = t.getContext().card;
@@ -485,7 +491,7 @@ async function addChildToContext(t, childCard) {
 		}
 		
 		addChildCheckItem(t, childCard, childrenChecklistId).then(async function(response) {
-			recountChildrenByContext(t);
+			recacheChildrenByContext(t);
 			
 			const parentCard  = await t.card('id', 'name', 'url');
 			const childCardId = childCard.id;
@@ -539,7 +545,7 @@ async function addChildToRelatedParent(t, childCard, parentCardId) {
 	}
 	
 	addChildCheckItem(t, childCard, childrenChecklistId).then(function() {
-		markToRecountOnRelatedParent(t, parentCardId);
+		markToRecacheOnRelatedParent(t, parentCardId);
 	});
 }
 
@@ -606,15 +612,13 @@ function addChildCheckItem(t, childCard, checklistId) {
  * @param {string} t context
  */
 function removeChildrenFromContext(t) {
-	t.get('card', 'shared', 'childrenChecklistId').then(async function(childrenChecklistId) {
-		if (childrenChecklistId === undefined) {
+	t.get('card', 'shared', 'childrenShortLinks').then(async function(childrenShortLinks) {
+		if (childrenShortLinks === undefined) {
 			return;
 		}
 		
 		// remove parent from each child
-		const checkItems = await getCheckItemsFromRelatedParent(t, childrenChecklistId);
-		for (let checkItem of checkItems) {
-			let childCardShortLink = getCardShortLinkFromUrl(checkItem.name);
+		for (let childCardShortLink of childrenShortLinks) {
 			let childCard          = await getCardByIdOrShortLink(t, childCardShortLink);
 			let parentAttachmentId = await getParentAttachmentIdOfRelatedChild(t, childCardShortLink);
 			
@@ -627,12 +631,18 @@ function removeChildrenFromContext(t) {
 			
 			removeParentFromRelatedChild(t, childCard.id, parentAttachmentId);
 		}
+	});
+	
+	t.get('card', 'shared', 'childrenChecklistId').then(function(childrenChecklistId) {
+		if (childrenChecklistId === undefined) {
+			return;
+		}
 		
 		// remove children checklist from parent
 		const parentCardIdOrShortLink = t.getContext().card;
 		removeChildrenChecklist(t, parentCardIdOrShortLink, childrenChecklistId).then(function() {
 			t.remove('card', 'shared', 'childrenChecklistId').then(function() {
-				recountChildrenByContext(t);
+				recacheChildrenByContext(t);
 			});
 		})
 	});
@@ -821,20 +831,34 @@ function showParentState(t, badgeType) {
  * @param  {object} t context
  * @param  {string} parentCardId
  */
-function markToRecountOnRelatedParent(t, parentCardId) {
-	t.set('organization', 'shared', 'childrenChecklistReCount-' + parentCardId, true);
+function markToRecacheOnRelatedParent(t, parentCardId) {
+	t.set('organization', 'shared', 'childrenChecklistRecache-' + parentCardId, true);
 }
 
 /**
- * re-count the number of (completed) children
+ * recache data on the parent card
+ * 
+ * - the shortLinks of children
+ * - the number of (completed) children
  * 
  * @param  {object} t context
+ * @param  {number} retries
  */
-function recountChildrenByContext(t) {
+function recacheChildrenByContext(t, retries=3) {
 	t.get('card', 'shared', 'childrenChecklistId').then(function(childrenChecklistId) {
 		if (childrenChecklistId === undefined) {
 			// re-try since the checklist isn't there yet
-			markToRecountOnRelatedParent(t, t.getContext().card);
+			if (retries > 0) {
+				setTimeout(function() {
+					retries -= 1;
+					recacheChildrenByContext(t, retries);
+				}, 250);
+			}
+			else {
+				t.set('card', 'shared', 'childrenCounts', {});
+				t.set('card', 'shared', 'childrenShortLinks', []);
+			}
+			
 			return;
 		}
 		
@@ -844,18 +868,22 @@ function recountChildrenByContext(t) {
 			}
 			
 			getCheckItemsFromRelatedParent(t, childrenChecklistId).then(function(checkItems) {
-				let counts = {
+				let shortLinks = [];
+				let counts     = {
 					total: checkItems.length,
 					done:  0,
 				};
 				
 				for (let checkItem of checkItems) {
+					shortLinks.push(getCardShortLinkFromUrl(checkItem.name));
+					
 					if (checkItem.state === 'complete') {
 						counts.done++;
 					}
 				}
 				
 				t.set('card', 'shared', 'childrenCounts', counts);
+				t.set('card', 'shared', 'childrenShortLinks', shortLinks);
 			});
 		});
 	});
@@ -887,10 +915,10 @@ function showChildrenState(t, badgeType) {
 			});
 		}
 	});
-	t.get('organization', 'shared', 'childrenChecklistReCount-' + cardId).then(function(childrenChecklistReCount) {
-		if (childrenChecklistReCount !== undefined) {
-			t.remove('organization', 'shared', 'childrenChecklistReCount-' + cardId);
-			recountChildrenByContext(t);
+	t.get('organization', 'shared', 'childrenChecklistRecache-' + cardId).then(function(childrenChecklistRecache) {
+		if (childrenChecklistRecache !== undefined) {
+			t.remove('organization', 'shared', 'childrenChecklistRecache-' + cardId);
+			recacheChildrenByContext(t);
 		}
 	})
 	
@@ -902,7 +930,7 @@ function showChildrenState(t, badgeType) {
 		const counts = await t.get('card', 'shared', 'childrenCounts');
 		if (counts === undefined) {
 			// sometimes we're too early
-			// don't mark to recount since the recounter will already re-try
+			// don't mark to recache since the recacher will already re-try
 			// and we'll do it on the wrong moment
 			return {};
 		}
