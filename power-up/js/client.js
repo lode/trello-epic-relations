@@ -828,6 +828,7 @@ function markToRecacheOnRelatedParent(t, parentCardId) {
 /**
  * recache data on the parent card
  * 
+ * - the shortLinks of children
  * - the number of (completed) children
  * 
  * @param  {object} t context
@@ -846,18 +847,22 @@ function recacheChildrenByContext(t) {
 			}
 			
 			getCheckItemsFromRelatedParent(t, childrenChecklistId).then(function(checkItems) {
-				let counts = {
+				let shortLinks = [];
+				let counts     = {
 					total: checkItems.length,
 					done:  0,
 				};
 				
 				for (let checkItem of checkItems) {
+					shortLinks.push(getCardShortLinkFromUrl(checkItem.name));
+					
 					if (checkItem.state === 'complete') {
 						counts.done++;
 					}
 				}
 				
 				t.set('card', 'shared', 'childrenCounts', counts);
+				t.set('card', 'shared', 'childrenShortLinks', shortLinks);
 			});
 		});
 	});
