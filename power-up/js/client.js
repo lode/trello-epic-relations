@@ -455,6 +455,7 @@ function removeParentAttachment(t, childCardIdOrShortLink, parentAttachmentId) {
  * @param {object} t context
  * @param {object} childCard {
  *        @var {string} id
+ *        @var {string} shortLink
  *        @var {string} url
  * }
  */
@@ -467,6 +468,19 @@ async function addChildToContext(t, childCard) {
 		});
 		return;
 	}
+	
+	// already set the new shortlink in the cache
+	// this will be done further down via the recache as well
+	// but that is not fast enough to notice when opening the search directly
+	t.get('card', 'shared', 'childrenShortLinks').then(function(childrenShortLinks) {
+		if (childrenShortLinks === undefined) {
+			childrenShortLinks = [];
+		}
+		
+		childrenShortLinks.push(childCard.shortLink);
+		
+		t.set('card', 'shared', 'childrenShortLinks', childrenShortLinks);
+	})
 	
 	t.get('card', 'shared', 'childrenChecklistId').then(async function(childrenChecklistId) {
 		if (childrenChecklistId === undefined) {
