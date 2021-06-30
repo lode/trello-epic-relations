@@ -612,15 +612,13 @@ function addChildCheckItem(t, childCard, checklistId) {
  * @param {string} t context
  */
 function removeChildrenFromContext(t) {
-	t.get('card', 'shared', 'childrenChecklistId').then(async function(childrenChecklistId) {
-		if (childrenChecklistId === undefined) {
+	t.get('card', 'shared', 'childrenShortLinks').then(async function(childrenShortLinks) {
+		if (childrenShortLinks === undefined) {
 			return;
 		}
 		
 		// remove parent from each child
-		const checkItems = await getCheckItemsFromRelatedParent(t, childrenChecklistId);
-		for (let checkItem of checkItems) {
-			let childCardShortLink = getCardShortLinkFromUrl(checkItem.name);
+		for (let childCardShortLink of childrenShortLinks) {
 			let childCard          = await getCardByIdOrShortLink(t, childCardShortLink);
 			let parentAttachmentId = await getParentAttachmentIdOfRelatedChild(t, childCardShortLink);
 			
@@ -632,6 +630,12 @@ function removeChildrenFromContext(t) {
 			}
 			
 			removeParentFromRelatedChild(t, childCard.id, parentAttachmentId);
+		}
+	});
+	
+	t.get('card', 'shared', 'childrenChecklistId').then(function(childrenChecklistId) {
+		if (childrenChecklistId === undefined) {
+			return;
 		}
 		
 		// remove children checklist from parent
