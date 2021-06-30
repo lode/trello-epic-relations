@@ -175,16 +175,8 @@ async function searchCards(t, options, parentOrChild, callback) {
 		}
 	});
 	
-	// collect current children
-	let childCardShortLinks = [];
-	await t.get('card', 'shared', 'childrenChecklistId').then(async function(childrenChecklistId) {
-		if (childrenChecklistId !== undefined) {
-			const checkItems = await getCheckItemsFromRelatedParent(t, childrenChecklistId);
-			for (let checkItem of checkItems) {
-				childCardShortLinks.push(getCardShortLinkFromUrl(checkItem.name));
-			}
-		}
-	});
+	// get current children
+	const childCardShortLinks = await t.get('card', 'shared', 'childrenShortLinks');
 	
 	// offer to add by card link
 	if (searchTerm !== '' && searchTerm.indexOf('https://trello.com/c/') === 0) {
