@@ -484,7 +484,7 @@ async function addChildToContext(t, childCard) {
 		childrenShortLinks.push(childCard.shortLink);
 		
 		t.set('card', 'shared', 'childrenShortLinks', childrenShortLinks);
-	})
+	});
 	
 	t.get('card', 'shared', 'childrenChecklistId').then(async function(childrenChecklistId) {
 		if (childrenChecklistId === undefined) {
@@ -650,7 +650,7 @@ function removeChildrenFromContext(t) {
 			t.remove('card', 'shared', 'childrenChecklistId').then(function() {
 				recacheChildrenByContext(t);
 			});
-		})
+		});
 	});
 }
 
@@ -969,7 +969,7 @@ function showChildrenState(t, badgeType) {
 			t.remove('organization', 'shared', 'childrenChecklistRecache-' + cardId);
 			recacheChildrenByContext(t);
 		}
-	})
+	});
 	
 	return t.get('card', 'shared', 'childrenChecklistId').then(async function(childrenChecklistId) {
 		if (childrenChecklistId === undefined) {
