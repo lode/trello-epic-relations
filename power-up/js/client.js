@@ -305,6 +305,8 @@ async function searchCards(t, options, parentOrChild, callback) {
  * }
  */
 function addParentToContext(t, parentCard) {
+	t.set('card', 'shared', 'parentName', parentCard.name);
+	
 	t.get('card', 'shared', 'parentAttachmentId').then(async function(parentAttachmentId) {
 		if (parentAttachmentId !== undefined) {
 			removeParentFromContext(t, parentAttachmentId);
@@ -338,6 +340,7 @@ async function addParentToRelatedChild(t, parentCard, childCardId) {
 		});
 	}
 	else {
+		markToRecacheOnRelatedChild(t, childCardId, parentCard.name);
 		addParentAttachment(t, parentCard, childCardIdOrShortLink).then(function(attachment) {
 			t.set('organization', 'shared', 'parentAttachmentId-' + childCardId, attachment.id);
 		});
@@ -384,6 +387,7 @@ function addParentAttachment(t, parentCard, childCardIdOrShortLink) {
  * @param  {string} parentAttachmentId
  */
 async function removeParentFromContext(t, parentAttachmentId) {
+	t.remove('card', 'shared', 'parentName');
 	await t.remove('card', 'shared', 'parentAttachmentId');
 	
 	t.card('shortLink', 'attachments').then(async function(card) {
@@ -495,6 +499,7 @@ async function addChildToContext(t, childCard) {
 			
 			const parentCard  = await t.card('id', 'name', 'url');
 			const childCardId = childCard.id;
+			markToRecacheOnRelatedChild(t, childCardId, parentCard.name);
 			addParentToRelatedChild(t, parentCard, childCardId);
 		});
 	});
@@ -629,6 +634,7 @@ function removeChildrenFromContext(t) {
 				t.remove('organization', 'shared', 'parentAttachmentId-' + childCard.id);
 			}
 			
+			markToRecacheOnRelatedChild(t, childCard.id, false);
 			removeParentFromRelatedChild(t, childCard.id, parentAttachmentId);
 		}
 	});
@@ -767,14 +773,27 @@ function showParentState(t, badgeType) {
 			});
 		}
 	});
+	t.get('organization', 'shared', 'parentNameRecache-' + cardId).then(function(parentNewName) {
+		if (parentNewName !== undefined) {
+			t.remove('organization', 'shared', 'parentNameRecache-' + cardId);
+			
+			if (parentNewName === false) {
+				t.remove('card', 'shared', 'parentName');
+			}
+			else {
+				t.set('card', 'shared', 'parentName', parentNewName);
+			}
+		}
+	});
 	
 	return t.get('card', 'shared', 'parentAttachmentId').then(async function(parentAttachmentId) {
 		if (parentAttachmentId === undefined) {
 			return {};
 		}
 		
+		let parentCardShortLink;
 		if (badgeType === 'card-detail-badges') {
-			const parentCardShortLink = await getParentShortLinkByAttachmentId(t, parentAttachmentId);
+			parentCardShortLink = await getParentShortLinkByAttachmentId(t, parentAttachmentId);
 			
 			// cleanup in case the attachment got removed manually
 			// @todo store the parent card id in the child as well to allow auto cleaning up of the child link from the parent's checklist
@@ -787,40 +806,26 @@ function showParentState(t, badgeType) {
 				
 				return {};
 			}
-			
-			return initializeAuthorization(t).then(async function(isAuthorized) {
-				let badge = {
-					title: 'Part of EPIC',
-					text:  'Open the EPIC card',
-					callback: function(t, options) {
-						t.showCard(parentCardShortLink);
-					},
-				};
-				
-				// improve by storing parent card name in plugindata
-				const parentCard = await t.cards('shortLink', 'name').then(async function(cards) {
-					let matchingCard = cards.find(function(card) {
-						return (card.shortLink === parentCardShortLink);
-					});
-					
-					if (matchingCard === undefined && isAuthorized) {
-						matchingCard = await getCardByIdOrShortLink(t, parentCardShortLink);
-					}
-					
-					return matchingCard;
-				});
-				
-				if (parentCard !== undefined) {
-					badge.text = parentCard.name;
-				}
-				
-				return badge;
-			});
+		}
+		
+		let parentName = await t.get('card', 'shared', 'parentName');
+		if (parentName === undefined) {
+			parentName = await recacheParentByContext(t, parentAttachmentId);
+		}
+		
+		if (badgeType === 'card-detail-badges') {
+			return {
+				title: 'Part of EPIC',
+				text:  parentName,
+				callback: function(t, options) {
+					t.showCard(parentCardShortLink);
+				},
+			};
 		}
 		else {
 			return {
 				icon:  ICON_UP,
-				text:  'part of an EPIC',
+				text:  'part of ' + parentName,
 				color: 'light-gray',
 			};
 		}
@@ -829,10 +834,54 @@ function showParentState(t, badgeType) {
 
 /**
  * @param  {object} t context
+ * @param  {string} childCardId
+ */
+function markToRecacheOnRelatedChild(t, childCardId, newName) {
+	t.set('organization', 'shared', 'parentNameRecache-' + childCardId, newName);
+}
+
+/**
+ * @param  {object} t context
  * @param  {string} parentCardId
  */
 function markToRecacheOnRelatedParent(t, parentCardId) {
 	t.set('organization', 'shared', 'childrenChecklistRecache-' + parentCardId, true);
+}
+
+/**
+ * @param  {object} t context
+ * @return {string} name of parent card
+ */
+function recacheParentByContext(t) {
+	return t.get('card', 'shared', 'parentAttachmentId').then(async function(parentAttachmentId) {
+		const parentCardShortLink = await getParentShortLinkByAttachmentId(t, parentAttachmentId);
+		
+		const parentCard = await t.cards('shortLink', 'name').then(async function(cards) {
+			let matchingCard = cards.find(function(card) {
+				return (card.shortLink === parentCardShortLink);
+			});
+			
+			if (matchingCard === undefined) {
+				matchingCard = initializeAuthorization(t).then(async function(isAuthorized) {
+					if (isAuthorized === false) {
+						return undefined;
+					}
+					
+					return await getCardByIdOrShortLink(t, parentCardShortLink);
+				});
+			}
+			
+			return matchingCard;
+		});
+		
+		if (parentCard === undefined) {
+			return 'an EPIC';
+		}
+		
+		t.set('card', 'shared', 'parentName', parentCard.name);
+		
+		return parentCard.name;
+	});
 }
 
 /**
