@@ -85,6 +85,69 @@ async function getChildrenChecklistIdOfRelatedParent(t, parentCardIdOrShortLink)
 	}
 }
 
+async function isParentOfContext(t, parentCardIdOrShortLink) {
+	console.debug('isParentOfContext()');
+	try {
+		console.debug('getting card data');
+		const response = await window.Trello.get('cards/' + parentCardIdOrShortLink + '?fields=name&pluginData=true&checklists=all&checklist_fields=all', {}, function(response) {
+			console.debug('received response');
+		}, function(error) {
+			t.alert({
+				message: JSON.stringify(error, null, '\t'),
+			});
+		});
+		console.debug('response', response);
+		
+		if (response.pluginData.length === 0) {
+			return false;
+		}
+		if (response.checklists.length === 0) {
+			return false;
+		}
+		
+		const childPluginData = response.pluginData.find(function(pluginData) {
+			return (JSON.parse(pluginData.value).childrenChecklistId !== undefined);
+		});
+		if (childPluginData === undefined) {
+			console.debug('no checklist in plugindata, okay');
+			return false;
+		}
+		
+		const childrenChecklistId = JSON.parse(childPluginData.value).childrenChecklistId;
+		const childrenChecklist = response.checklists.find(function(checklist) {
+			return (checklist.id === childrenChecklistId);
+		});
+		if (childrenChecklist === undefined) {
+			console.debug('no checklist by id from plugindata, checklist removed?');
+			return false;
+		}
+		
+		if (childrenChecklist.checkItems.length === 0) {
+			console.debug('no checkitems in checklist, removed?');
+			return false;
+		}
+		
+		const childCardShortLink  = await t.card('shortLink').then(function(card) { return card.shortLink; });
+		const childCheckItem = childrenChecklist.checkItems.find(function(checkItem) {
+			let childCheckItemShortLink = getCardShortLinkFromUrl(checkItem.name);
+			return (childCheckItemShortLink === childCardShortLink);
+		});
+		if (childCheckItem === undefined) {
+			console.debug('own card not found in checklist, okay or removed?');
+			return false;
+		}
+		
+		return true;
+	}
+	catch (error) {
+		t.alert({
+			message: JSON.stringify(error, null, '\t'),
+		});
+		
+		return false;
+	}
+}
+
 /**
  * @param  {object} t without context
  * @param  {string} childrenChecklistId
@@ -340,9 +403,9 @@ async function addParentToRelatedChild(t, parentCard, childCardId) {
 		});
 	}
 	else {
-		markToRecacheOnRelatedChild(t, childCardId, parentCard.name);
+		//markToRecacheOnRelatedChild(t, childCardId, parentCard.name);
 		addParentAttachment(t, parentCard, childCardIdOrShortLink).then(function(attachment) {
-			t.set('organization', 'shared', 'parentAttachmentId-' + childCardId, attachment.id);
+			//t.set('organization', 'shared', 'parentAttachmentId-' + childCardId, attachment.id);
 		});
 	}
 }
@@ -427,10 +490,10 @@ async function removeParentFromContext(t, parentAttachmentId) {
  * @param  {string} parentAttachmentId
  */
 function removeParentFromRelatedChild(t, childCardId, parentAttachmentId) {
-	t.set('organization', 'shared', 'parentAttachmentId-' + childCardId, 'remove').then(function() {
-		const childCardIdOrShortLink = childCardId;
-		removeParentAttachment(t, childCardIdOrShortLink, parentAttachmentId);
-	});
+	const childCardIdOrShortLink = childCardId;
+	removeParentAttachment(t, childCardIdOrShortLink, parentAttachmentId);
+	
+	t.set('organization', 'shared', 'parentAttachmentId-' + childCardId, 'remove');
 }
 
 /**
@@ -499,7 +562,7 @@ async function addChildToContext(t, childCard) {
 			
 			const parentCard  = await t.card('id', 'name', 'url');
 			const childCardId = childCard.id;
-			markToRecacheOnRelatedChild(t, childCardId, parentCard.name);
+			//markToRecacheOnRelatedChild(t, childCardId, parentCard.name);
 			addParentToRelatedChild(t, parentCard, childCardId);
 		});
 	});
@@ -788,12 +851,51 @@ function showParentState(t, badgeType) {
 	
 	return t.get('card', 'shared', 'parentAttachmentId').then(async function(parentAttachmentId) {
 		if (parentAttachmentId === undefined) {
+			// @todo only do this if the card modified date changed
+			const childCardName = await t.card('name').then(function(card) { return card.name; });
+			return t.card('attachments').then(async function(card) {
+				if (card.attachments.length === 0) {
+					return {};
+				}
+				
+				for (let attachment of card.attachments) {
+					const parentCardShortLink = getCardShortLinkFromUrl(attachment.url);
+					if (parentCardShortLink === undefined) {
+						continue;
+					}
+					
+					initializeAuthorization(t).then(async function(isAuthorized) {
+						if (isAuthorized === false) {
+							return;
+						}
+						
+						const result = await isParentOfContext(t, parentCardShortLink);
+						console.debug('isParentOfContext', result);
+					});
+					
+					if (childCheckItem === undefined) {
+						return {text: 'has a random attachment'};
+					}
+					else {
+						return {text: 'has a parent attachment'};
+					}
+				}
+				
+				return {};
+			});
 			return {};
 		}
 		
-		let parentCardShortLink;
+		const parentName = await t.get('card', 'shared', 'parentName').then(function(parentName) {
+			if (parentName === undefined) {
+				return recacheParentByContext(t, parentAttachmentId);
+			}
+			
+			return parentName;
+		});
+		
 		if (badgeType === 'card-detail-badges') {
-			parentCardShortLink = await getParentShortLinkByAttachmentId(t, parentAttachmentId);
+			const parentCardShortLink = await getParentShortLinkByAttachmentId(t, parentAttachmentId);
 			
 			// cleanup in case the attachment got removed manually
 			// @todo store the parent card id in the child as well to allow auto cleaning up of the child link from the parent's checklist
@@ -806,14 +908,7 @@ function showParentState(t, badgeType) {
 				
 				return {};
 			}
-		}
-		
-		let parentName = await t.get('card', 'shared', 'parentName');
-		if (parentName === undefined) {
-			parentName = await recacheParentByContext(t, parentAttachmentId);
-		}
-		
-		if (badgeType === 'card-detail-badges') {
+			
 			return {
 				title: 'Part of EPIC',
 				text:  parentName,
