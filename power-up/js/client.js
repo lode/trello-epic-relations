@@ -3,171 +3,10 @@
 var Promise = TrelloPowerUp.Promise;
 
 const CDN_BASE_URL = document.getElementById('js-cdn-base-url').href;
+const FAVICON      = CDN_BASE_URL + 'favicon.png';
 const ICON_UP      = CDN_BASE_URL + 'icon-up.png';
 const ICON_DOWN    = CDN_BASE_URL + 'icon-down.png';
 const LIST_MAXIMUM = 10;
-
-/**
- * @param  {object} t context
- * @param  {string} parentAttachmentId
- * @return {string} shortLink
- */
-function getParentShortLinkByAttachmentId(t, parentAttachmentId) {
-	return t.card('attachments').then(async function(card) {
-		const parentAttachment = card.attachments.find(function(attachment) {
-			return (attachment.id === parentAttachmentId);
-		});
-		
-		// if the attachment was removed manually
-		if (parentAttachment === undefined) {
-			return undefined;
-		}
-		
-		const parentCardShortLink = getCardShortLinkFromUrl(parentAttachment.url);
-		
-		return parentCardShortLink;
-	});
-}
-
-/**
- * @param  {object} t without context
- * @param  {string} childCardIdOrShortLink
- * @return {string} attachmentId
- */
-async function getParentAttachmentIdOfRelatedChild(t, childCardIdOrShortLink) {
-	try {
-		const response = await window.Trello.get('cards/' + childCardIdOrShortLink + '/pluginData', {}, null, function(error) {
-			t.alert({
-				message: JSON.stringify(error, null, '\t'),
-			});
-		});
-		
-		const parentPluginData = response.find(function(pluginData) {
-			return (JSON.parse(pluginData.value).parentAttachmentId !== undefined);
-		});
-		
-		const parentAttachmentId = (parentPluginData !== undefined) ? JSON.parse(parentPluginData.value).parentAttachmentId : undefined;
-		
-		return parentAttachmentId;
-	}
-	catch (error) {
-		t.alert({
-			message: JSON.stringify(error, null, '\t'),
-		});
-	}
-}
-
-/**
- * @param  {object} t without context
- * @param  {string} parentCardIdOrShortLink
- * @return {string} checklistId
- */
-async function getChildrenChecklistIdOfRelatedParent(t, parentCardIdOrShortLink) {
-	try {
-		const response = await window.Trello.get('cards/' + parentCardIdOrShortLink + '/pluginData', {}, null, function(error) {
-			t.alert({
-				message: JSON.stringify(error, null, '\t'),
-			});
-		});
-		
-		const childPluginData = response.find(function(pluginData) {
-			return (JSON.parse(pluginData.value).childrenChecklistId !== undefined);
-		});
-		
-		const childrenChecklistId = (childPluginData !== undefined) ? JSON.parse(childPluginData.value).childrenChecklistId : undefined;
-		
-		return childrenChecklistId;
-	}
-	catch (error) {
-		t.alert({
-			message: JSON.stringify(error, null, '\t'),
-		});
-	}
-}
-
-async function isParentOfContext(t, parentCardIdOrShortLink) {
-	console.debug('isParentOfContext()');
-	try {
-		console.debug('getting card data');
-		const response = await window.Trello.get('cards/' + parentCardIdOrShortLink + '?fields=name&pluginData=true&checklists=all&checklist_fields=all', {}, function(response) {
-			console.debug('received response');
-		}, function(error) {
-			t.alert({
-				message: JSON.stringify(error, null, '\t'),
-			});
-		});
-		console.debug('response', response);
-		
-		if (response.pluginData.length === 0) {
-			return false;
-		}
-		if (response.checklists.length === 0) {
-			return false;
-		}
-		
-		const childPluginData = response.pluginData.find(function(pluginData) {
-			return (JSON.parse(pluginData.value).childrenChecklistId !== undefined);
-		});
-		if (childPluginData === undefined) {
-			console.debug('no checklist in plugindata, okay');
-			return false;
-		}
-		
-		const childrenChecklistId = JSON.parse(childPluginData.value).childrenChecklistId;
-		const childrenChecklist = response.checklists.find(function(checklist) {
-			return (checklist.id === childrenChecklistId);
-		});
-		if (childrenChecklist === undefined) {
-			console.debug('no checklist by id from plugindata, checklist removed?');
-			return false;
-		}
-		
-		if (childrenChecklist.checkItems.length === 0) {
-			console.debug('no checkitems in checklist, removed?');
-			return false;
-		}
-		
-		const childCardShortLink  = await t.card('shortLink').then(function(card) { return card.shortLink; });
-		const childCheckItem = childrenChecklist.checkItems.find(function(checkItem) {
-			let childCheckItemShortLink = getCardShortLinkFromUrl(checkItem.name);
-			return (childCheckItemShortLink === childCardShortLink);
-		});
-		if (childCheckItem === undefined) {
-			console.debug('own card not found in checklist, okay or removed?');
-			return false;
-		}
-		
-		return true;
-	}
-	catch (error) {
-		t.alert({
-			message: JSON.stringify(error, null, '\t'),
-		});
-		
-		return false;
-	}
-}
-
-/**
- * @param  {object} t without context
- * @param  {string} childrenChecklistId
- * @return {Promise}
- */
-function getCheckItemsFromRelatedParent(t, childrenChecklistId) {
-	try {
-		return window.Trello.get('checklists/' + childrenChecklistId + '/checkItems?fields=name,state', {}, null,
-		function(error) {
-			t.alert({
-				message: JSON.stringify(error, null, '\t'),
-			});
-		});
-	}
-	catch (error) {
-		t.alert({
-			message: JSON.stringify(error, null, '\t'),
-		});
-	}
-}
 
 /**
  * @param  {string} cardUrl
@@ -195,10 +34,7 @@ function getCardShortLinkFromUrl(cardUrl) {
  */
 async function getCardByIdOrShortLink(t, cardIdOrShortLink) {
 	try {
-		const response = await window.Trello.get('cards/' + cardIdOrShortLink + '?fields=id,name,url', {}, function(response) {
-			return response;
-		},
-		function(error) {
+		const response = await window.Trello.get('cards/' + cardIdOrShortLink + '?fields=id,name,url,shortLink', {}, null, function(error) {
 			t.alert({
 				message: JSON.stringify(error, null, '\t'),
 			});
@@ -217,6 +53,158 @@ async function getCardByIdOrShortLink(t, cardIdOrShortLink) {
 	}
 }
 
+async function getPluginData(t, cardIdOrShortLink, parentOrChildren) {
+	try {
+		const response = await window.Trello.get('cards/' + cardIdOrShortLink + '?fields=&pluginData=true');
+		if (response.pluginData.length === 0) {
+			return;
+		}
+		
+		const pluginData = response.pluginData.find(function(pluginData) {
+			return (JSON.parse(pluginData.value)[parentOrChildren] !== undefined);
+		});
+		if (pluginData === undefined) {
+			return;
+		}
+		
+		return JSON.parse(pluginData.value)[parentOrChildren];
+	}
+	catch (error) {
+		t.alert({
+			message: JSON.stringify(error, null, '\t'),
+		});
+		
+		return;
+	}
+}
+
+async function getChecklists(t, parentCardIdOrShortLink) {
+	try {
+		const response = await window.Trello.get('cards/' + parentCardIdOrShortLink + '?fields=&checklists=all&checklist_fields=all');
+		
+		return response.checklists;
+	}
+	catch (error) {
+		t.alert({
+			message: JSON.stringify(error, null, '\t'),
+		});
+		
+		return;
+	}
+}
+
+async function hasParentToConnect(t, attachments) {
+	// @todo check last modified against a cache
+	
+	if (attachments === undefined) {
+		attachments = await t.card('attachments').then(function(card) {
+			return card.attachments;
+		});
+	}
+	
+	if (attachments.length === 0) {
+		return false;
+	}
+	
+	const isAuthorized = await initializeAuthorization(t);
+	if (isAuthorized === false) {
+		return false;
+	}
+	
+	const childShortLink = await t.card('shortLink').then(function(card) {
+		return card.shortLink;
+	})
+	
+	let parentShortLink;
+	let childrenOfParent;
+	let parentCard;
+	
+	for (let attachment of attachments) {
+		parentShortLink = getCardShortLinkFromUrl(attachment.url);
+		if (parentShortLink === undefined) {
+			continue;
+		}
+		
+		childrenOfParent = await getPluginData(t, parentShortLink, 'children');
+		if (childrenOfParent === undefined) {
+			continue;
+		}
+		if (childrenOfParent.shortLinks.includes(childShortLink) === false) {
+			continue;
+		}
+		
+		parentCard = await getCardByIdOrShortLink(t, parentShortLink);
+		
+		return {
+			parentCard: parentCard,
+			attachment: attachment,
+		};
+	}
+	
+	return false;
+}
+
+async function hasChildrenToConnect(t) {
+	// @todo check last modified against a cache
+	
+	const isAuthorized = await initializeAuthorization(t);
+	if (isAuthorized === false) {
+		return false;
+	}
+	
+	const parentCardId = t.getContext().card;
+	const checklists = await getChecklists(t, parentCardId);
+	if (checklists.length === 0) {
+		return false;
+	}
+	
+	const parentShortLink = await t.card('shortLink').then(function(card) {
+		return card.shortLink;
+	})
+	
+	let childShortLink;
+	let parentOfChild;
+	let childrenShortLinks;
+	
+	// @todo check if we already know the checklist
+	// @todo check which children we already know
+	
+	for (let checklist of checklists) {
+		if (checklist.checkItems.length === 0) {
+			continue;
+		}
+		
+		childrenShortLinks = [];
+		for (let checkItem of checklist.checkItems) {
+			childShortLink = getCardShortLinkFromUrl(checkItem.name);
+			if (childShortLink === undefined) {
+				continue;
+			}
+			
+			parentOfChild = await getPluginData(t, childShortLink, 'parent');
+			if (parentOfChild === undefined) {
+				continue;
+			}
+			if (parentOfChild.shortLink !== parentShortLink) {
+				break;
+			}
+			
+			childrenShortLinks.push(childShortLink);
+		}
+		
+		if (childrenShortLinks.length === 0) {
+			continue;
+		}
+		
+		return {
+			shortLinks: childrenShortLinks,
+			checklist:  checklist,
+		}
+	}
+	
+	return false;
+}
+
 /**
  * @param  {object}   t             context
  * @param  {object}   options       from context, containing optional search keyword
@@ -232,14 +220,15 @@ async function searchCards(t, options, parentOrChild, callback) {
 	
 	// collect current parent
 	let parentCardShortLink = undefined;
-	await t.get('card', 'shared', 'parentAttachmentId').then(async function(parentAttachmentId) {
-		if (parentAttachmentId !== undefined) {
-			parentCardShortLink = await getParentShortLinkByAttachmentId(t, parentAttachmentId);
-		}
-	});
+	// @todo re-enable filtering out existing relations
+	//#await t.get('card', 'shared', 'parentAttachmentId').then(async function(parentAttachmentId) {
+	//#	if (parentAttachmentId !== undefined) {
+	//#		parentCardShortLink = await getParentShortLinkByAttachmentId(t, parentAttachmentId);
+	//#	}
+	//#});
 	
 	// get current children
-	const childCardShortLinks = await t.get('card', 'shared', 'childrenShortLinks');
+	const childCardShortLinks = []; //# await t.get('card', 'shared', 'childrenShortLinks');
 	
 	// offer to add by card link
 	if (searchTerm !== '' && searchTerm.indexOf('https://trello.com/c/') === 0) {
@@ -322,92 +311,87 @@ async function searchCards(t, options, parentOrChild, callback) {
 			});
 			
 			// add remove buttons
-			if (searchTerm === '') {
-				if (parentOrChild === 'parent') {
-					await t.get('card', 'shared', 'parentAttachmentId').then(function(parentAttachmentId) {
-						if (parentAttachmentId !== undefined) {
-							cards.push({
-								text:     '× Remove current EPIC',
-								callback: function(t, options) {
-									removeParentFromContext(t, parentAttachmentId);
-									t.closePopup();
-								},
-							});
-						}
-					});
-				}
-				
-				if (parentOrChild === 'child') {
-					await t.get('card', 'shared', 'childrenChecklistId').then(function(childrenChecklistId) {
-						if (childrenChecklistId !== undefined) {
-							cards.push({
-								text:     '× Remove all tasks (remove the EPIC from the task card to remove a single task)',
-								callback: function(t, options) {
-									removeChildrenFromContext(t);
-									t.closePopup();
-								},
-							});
-						}
-					});
-				}
-			}
+			// @todo re-enable buttons to remove parent/children
+			//#if (searchTerm === '') {
+			//#	if (parentOrChild === 'parent') {
+			//#		await t.get('card', 'shared', 'parentAttachmentId').then(function(parentAttachmentId) {
+			//#			if (parentAttachmentId !== undefined) {
+			//#				cards.push({
+			//#					text:     '× Remove current EPIC',
+			//#					callback: function(t, options) {
+			//#						removeParentFromContext(t, parentAttachmentId);
+			//#						t.closePopup();
+			//#					},
+			//#				});
+			//#			}
+			//#		});
+			//#	}
+			//#	
+			//#	if (parentOrChild === 'child') {
+			//#		await t.get('card', 'shared', 'childrenChecklistId').then(function(childrenChecklistId) {
+			//#			if (childrenChecklistId !== undefined) {
+			//#				cards.push({
+			//#					text:     '× Remove all tasks (remove the EPIC from the task card to remove a single task)',
+			//#					callback: function(t, options) {
+			//#						removeChildrenFromContext(t);
+			//#						t.closePopup();
+			//#					},
+			//#				});
+			//#			}
+			//#		});
+			//#	}
+			//#}
 			
 			return cards;
 		});
 	}
 }
 
-/**
- * add parent to a card
- * 
- * @param {object} t context
- * @param {object} parentCard {
- *        @var {string} id
- *        @var {string} name
- *        @var {string} url
- * }
- */
-function addParentToContext(t, parentCard) {
-	t.set('card', 'shared', 'parentName', parentCard.name);
+async function addParent(t, parentCard) {
+	const childCardId = t.getContext().card;
+	const attachment  = await addAttachment(t, parentCard, childCardId);
+	storeParent(t, parentCard, attachment);
 	
-	t.get('card', 'shared', 'parentAttachmentId').then(async function(parentAttachmentId) {
-		if (parentAttachmentId !== undefined) {
-			removeParentFromContext(t, parentAttachmentId);
-		}
-		
-		addParentAttachment(t, parentCard, t.getContext().card).then(async function(attachment) {
-			t.set('card', 'shared', 'parentAttachmentId', attachment.id);
-			const childCard = await t.card('id', 'name', 'url');
-			const parentCardId = parentCard.id;
-			addChildToRelatedParent(t, childCard, parentCardId);
-		});
+	const childCard = await t.card('url');
+	// @todo don't create double checklists
+	const checklist = await addChecklist(t, parentCard.id);
+	addCheckItem(t, childCard, checklist.id);
+}
+
+async function addChild(t, childCard) {
+	const parentCardId = t.getContext().card;
+	// @todo don't create double checklists
+	const checklist    = await addChecklist(t, parentCardId);
+	addCheckItem(t, childCard, checklist.id);
+	storeChild(t, childCard, checklist);
+	
+	const parentCard = await t.card('url');
+	addAttachment(t, parentCard, childCard.id);
+}
+
+function storeParent(t, parentCard, attachment) {
+	t.set('card', 'shared', 'parent', {
+		attachmentId: attachment.id,
+		shortLink:    parentCard.shortLink,
+		name:         parentCard.name,
 	});
 }
 
-/**
- * sync so child get context as parent
- * 
- * @param {object} t without context
- * @param {object} parentCard {
- *        @var {string} name
- *        @var {string} url
- * }
- * @param {string} childCardId
- */
-async function addParentToRelatedChild(t, parentCard, childCardId) {
-	const childCardIdOrShortLink = childCardId;
-	const parentAttachmentId = await getParentAttachmentIdOfRelatedChild(t, childCardIdOrShortLink);
-	if (parentAttachmentId !== undefined) {
-		t.alert({
-			message: 'That task is already part of another EPIC. Change the EPIC on that card to switch.',
-		});
-	}
-	else {
-		//markToRecacheOnRelatedChild(t, childCardId, parentCard.name);
-		addParentAttachment(t, parentCard, childCardIdOrShortLink).then(function(attachment) {
-			//t.set('organization', 'shared', 'parentAttachmentId-' + childCardId, attachment.id);
-		});
-	}
+function storeChild(t, childCard, checklist) {
+	t.get('card', 'shared', 'children').then(function(children) {
+		if (children === undefined) {
+			children = {
+				checklistId: checklist.id,
+				shortLinks:  [],
+				counts:      {total: 0, done:  0},
+			};
+		}
+		
+		children.shortLinks.push(childCard.shortLink);
+		children.counts.total += 1;
+		
+		t.set('card', 'shared', 'children', children);
+	});
 }
 
 /**
@@ -416,15 +400,14 @@ async function addParentToRelatedChild(t, parentCard, childCardId) {
  * 
  * @param {object} t without context
  * @param {object} parentCard {
- *        @var {string} name
  *        @var {string} url
  * }
  * @param {string} childCardIdOrShortLink
  * @return {Promise}
  */
-function addParentAttachment(t, parentCard, childCardIdOrShortLink) {
+function addAttachment(t, parentCard, childCardIdOrShortLink) {
 	const postData = {
-		name: 'EPIC: ' + parentCard.name,
+		name: 'EPIC',
 		url:  parentCard.url,
 	};
 	
@@ -444,187 +427,13 @@ function addParentAttachment(t, parentCard, childCardIdOrShortLink) {
 }
 
 /**
- * remove parent from a card
- * 
- * @param  {object} t context
- * @param  {string} parentAttachmentId
- */
-async function removeParentFromContext(t, parentAttachmentId) {
-	t.remove('card', 'shared', 'parentName');
-	await t.remove('card', 'shared', 'parentAttachmentId');
-	
-	t.card('shortLink', 'attachments').then(async function(card) {
-		const parentAttachment = card.attachments.find(function(attachment) {
-			return (attachment.id === parentAttachmentId);
-		});
-		
-		const childCardIdOrShortLink = t.getContext().card;
-		removeParentAttachment(t, childCardIdOrShortLink, parentAttachmentId);
-		
-		const parentCardShortLink = getCardShortLinkFromUrl(parentAttachment.url);
-		const parentCard          = await getCardByIdOrShortLink(t, parentCardShortLink);
-		let childrenChecklistId   = await getChildrenChecklistIdOfRelatedParent(t, parentCardShortLink);
-		
-		// parent is on another board, and the plugindata isn't connected yet
-		// get checklist from organization level plugindata instead
-		if (childrenChecklistId === undefined) {
-			childrenChecklistId = await t.get('organization', 'shared', 'childrenChecklistId-' + parentCard.id);
-		}
-		
-		const checkItems = await getCheckItemsFromRelatedParent(t, childrenChecklistId);
-		
-		const childCheckItem = checkItems.find(function(checkItem) {
-			let childCheckItemShortLink = getCardShortLinkFromUrl(checkItem.name);
-			return (childCheckItemShortLink === card.shortLink);
-		});
-		
-		removeChildCheckItem(t, childrenChecklistId, childCheckItem.id).then(function() {
-			markToRecacheOnRelatedParent(t, parentCard.id);
-		});
-	});
-}
-
-/**
- * @param  {object} t without context
- * @param  {string} childCardId
- * @param  {string} parentAttachmentId
- */
-function removeParentFromRelatedChild(t, childCardId, parentAttachmentId) {
-	const childCardIdOrShortLink = childCardId;
-	removeParentAttachment(t, childCardIdOrShortLink, parentAttachmentId);
-	
-	t.set('organization', 'shared', 'parentAttachmentId-' + childCardId, 'remove');
-}
-
-/**
- * @param  {object} t without context
- * @param  {string} childCardIdOrShortLink
- * @param  {string} parentAttachmentId
- * @return {Promise}
- */
-function removeParentAttachment(t, childCardIdOrShortLink, parentAttachmentId) {
-	try {
-		return window.Trello.delete('cards/' + childCardIdOrShortLink + '/attachments/' + parentAttachmentId, {}, null,
-		function(error) {
-			t.alert({
-				message: JSON.stringify(error, null, '\t'),
-			});
-		});
-	}
-	catch (error) {
-		t.alert({
-			message: JSON.stringify(error, null, '\t'),
-		});
-	}
-}
-
-/**
- * @param {object} t context
- * @param {object} childCard {
- *        @var {string} id
- *        @var {string} shortLink
- *        @var {string} url
- * }
- */
-async function addChildToContext(t, childCard) {
-	const childCardIdOrShortLink = childCard.id;
-	const parentAttachmentId = await getParentAttachmentIdOfRelatedChild(t, childCardIdOrShortLink);
-	if (parentAttachmentId !== undefined) {
-		t.alert({
-			message: 'That task is already part of another EPIC. Change the EPIC on that card to switch.',
-		});
-		return;
-	}
-	
-	// already set the new shortlink in the cache
-	// this will be done further down via the recache as well
-	// but that is not fast enough to notice when opening the search directly
-	t.get('card', 'shared', 'childrenShortLinks').then(function(childrenShortLinks) {
-		if (childrenShortLinks === undefined) {
-			childrenShortLinks = [];
-		}
-		
-		childrenShortLinks.push(childCard.shortLink);
-		
-		t.set('card', 'shared', 'childrenShortLinks', childrenShortLinks);
-	});
-	
-	t.get('card', 'shared', 'childrenChecklistId').then(async function(childrenChecklistId) {
-		if (childrenChecklistId === undefined) {
-			const parentCardIdOrShortLink = t.getContext().card;
-			const response = await addChildrenChecklist(t, parentCardIdOrShortLink);
-			childrenChecklistId = response.id;
-			t.set('card', 'shared', 'childrenChecklistId', childrenChecklistId);
-		}
-		
-		addChildCheckItem(t, childCard, childrenChecklistId).then(async function(response) {
-			recacheChildrenByContext(t);
-			
-			const parentCard  = await t.card('id', 'name', 'url');
-			const childCardId = childCard.id;
-			//markToRecacheOnRelatedChild(t, childCardId, parentCard.name);
-			addParentToRelatedChild(t, parentCard, childCardId);
-		});
-	});
-}
-
-/**
- * sync so parent gets context as child
- * 
- * @param {object} t without context
- * @param {object} childCard {
- *        @var {string} url
- * }
- * @param {object} parentCardId
- */
-async function addChildToRelatedParent(t, childCard, parentCardId) {
-	const parentCardIdOrShortLink = parentCardId;
-	let childrenChecklistId = await getChildrenChecklistIdOfRelatedParent(t, parentCardIdOrShortLink);
-	
-	// parent is on another board, and the plugindata isn't connected yet
-	// get checklist from organization level plugindata instead
-	if (childrenChecklistId === undefined) {
-		childrenChecklistId = await t.get('organization', 'shared', 'childrenChecklistId-' + parentCardId);
-		if (childrenChecklistId !== undefined) {
-			let checklistExists = false;
-			try {
-				checklistExists = await window.Trello.get('checklists/' + childrenChecklistId, {}, function(response) {
-					return true;
-				},
-				function(error) {
-					return false;
-				});
-			}
-			catch (error) {
-				checklistExists = false;
-			}
-			
-			if (checklistExists === false) {
-				childrenChecklistId = undefined;
-			}
-		}
-	}
-	
-	if (childrenChecklistId === undefined) {
-		// create checklist
-		const response = await addChildrenChecklist(t, parentCardIdOrShortLink);
-		childrenChecklistId = response.id;
-		t.set('organization', 'shared', 'childrenChecklistId-' + parentCardId, childrenChecklistId);
-	}
-	
-	addChildCheckItem(t, childCard, childrenChecklistId).then(function() {
-		markToRecacheOnRelatedParent(t, parentCardId);
-	});
-}
-
-/**
  * add checklist to host children on a card
  * 
  * @param {object} t without context
  * @param {object} parentCardIdOrShortLink
  * @return {Promise}
  */
-function addChildrenChecklist(t, parentCardIdOrShortLink) {
+function addChecklist(t, parentCardIdOrShortLink) {
 	const postData = {
 		name: 'Tasks',
 		pos:  'top',
@@ -653,7 +462,7 @@ function addChildrenChecklist(t, parentCardIdOrShortLink) {
  * @param {string} checklistId
  * @return {Promise}
  */
-function addChildCheckItem(t, childCard, checklistId) {
+function addCheckItem(t, childCard, checklistId) {
 	const postData = {
 		name: childCard.url,
 		pos:  'bottom',
@@ -674,91 +483,70 @@ function addChildCheckItem(t, childCard, checklistId) {
 	}
 }
 
-/**
- * remove checklist hosting children on a card
- * 
- * @param {string} t context
- */
-function removeChildrenFromContext(t) {
-	t.get('card', 'shared', 'childrenShortLinks').then(async function(childrenShortLinks) {
-		if (childrenShortLinks === undefined) {
-			return;
-		}
-		
-		// remove parent from each child
-		for (let childCardShortLink of childrenShortLinks) {
-			let childCard          = await getCardByIdOrShortLink(t, childCardShortLink);
-			let parentAttachmentId = await getParentAttachmentIdOfRelatedChild(t, childCardShortLink);
-			
-			// child is on another board, and the plugindata isn't connected yet
-			// get attachment from organization level plugindata instead
-			if (parentAttachmentId === undefined) {
-				parentAttachmentId = await t.get('organization', 'shared', 'parentAttachmentId-' + childCard.id);
-				t.remove('organization', 'shared', 'parentAttachmentId-' + childCard.id);
-			}
-			
-			markToRecacheOnRelatedChild(t, childCard.id, false);
-			removeParentFromRelatedChild(t, childCard.id, parentAttachmentId);
-		}
-	});
-	
-	t.get('card', 'shared', 'childrenChecklistId').then(function(childrenChecklistId) {
-		if (childrenChecklistId === undefined) {
-			return;
-		}
-		
-		// remove children checklist from parent
-		const parentCardIdOrShortLink = t.getContext().card;
-		removeChildrenChecklist(t, parentCardIdOrShortLink, childrenChecklistId).then(function() {
-			t.remove('card', 'shared', 'childrenChecklistId').then(function() {
-				recacheChildrenByContext(t);
+function showBadgeOnParent(t, badgeType) {
+	return t.get('card', 'shared', 'children').then(async function(children) {
+		if (children === undefined) {
+			hasChildrenToConnect(t).then(function(childrenData) {
+				if (childrenData !== false) {
+					for (let childShortLink of childrenData.shortLinks) {
+						storeChild(t, {shortLink: childShortLink}, childrenData.checklist);
+					}
+				}
 			});
-		});
+			
+			return {};
+		}
+		
+		const color = (children.counts.done > 0 && children.counts.done === children.counts.total) ? 'green' : 'light-gray';
+		
+		switch (badgeType) {
+			case 'card-badges':
+				return {
+					icon:  ICON_DOWN,
+					text:  children.counts.done + '/' + children.counts.total + ' tasks',
+					color: color,
+				};
+			
+			case 'card-detail-badges':
+				return {
+					title: 'Tasks',
+					text:  children.counts.done + '/' + children.counts.total,
+					color: color,
+				};
+		}
 	});
 }
 
-/**
- * @param  {object} t without context
- * @param  {object} parentCardIdOrShortLink
- * @param  {string} childrenChecklistId
- * @return {Promise}
- */
-function removeChildrenChecklist(t, parentCardIdOrShortLink, childrenChecklistId) {
-	try {
-		return window.Trello.delete('cards/' + parentCardIdOrShortLink + '/checklists/' + childrenChecklistId, {}, null,
-		function(error) {
-			t.alert({
-				message: JSON.stringify(error, null, '\t'),
+function showBadgeOnChild(t, badgeType, attachments) {
+	return t.get('card', 'shared', 'parent').then(async function(parent) {
+		if (parent === undefined) {
+			hasParentToConnect(t, attachments).then(function(parentData) {
+				if (parentData !== false) {
+					storeParent(t, parentData.parentCard, parentData.attachment);
+				}
 			});
-		});
-	}
-	catch (error) {
-		t.alert({
-			message: JSON.stringify(error, null, '\t'),
-		});
-	}
-}
-
-/**
- * @param  {object} t without context
- * @param  {string} childrenChecklistId
- * @param  {string} childCheckItemId
- * @return {Promise}
- */
-function removeChildCheckItem(t, childrenChecklistId, childCheckItemId) {
-	try {
-		return window.Trello.delete('checklists/' + childrenChecklistId + '/checkItems/' + childCheckItemId, {}, null,
-		function(error) {
-			t.alert({
-				message: JSON.stringify(error, null, '\t'),
-			});
-		});
-	}
-	catch (error) {
-		t.alert({
-			message: JSON.stringify(error, null, '\t'),
-		});
-	}
+			
+			return {};
+		}
+		
+		switch (badgeType) {
+			case 'card-badges':
+				return {
+					icon:  ICON_UP,
+					text:  'part of ' + parent.name,
+					color: 'light-gray',
+				};
+			
+			case 'card-detail-badges':
+				return {
+					title: 'Part of EPIC',
+					text:  parent.name,
+					callback: function(t, options) {
+						t.showCard(parent.shortLink);
+					},
+				};
+		}
+	});
 }
 
 /**
@@ -767,7 +555,7 @@ function removeChildCheckItem(t, childrenChecklistId, childCheckItemId) {
  */
 function showParentForm(t) {
 	return t.popup({
-		'title': 'Add an EPIC',
+		title: 'Add an EPIC',
 		search: {
 			placeholder: 'Search or paste a link',
 			empty: 'Not found in card titles. — You can also paste a link to a card.',
@@ -776,7 +564,7 @@ function showParentForm(t) {
 		},
 		items: function(t, options) {
 			return searchCards(t, options, 'parent', function(t, card) {
-				addParentToContext(t, card);
+				addParent(t, card);
 				t.closePopup();
 			});
 		},
@@ -789,7 +577,7 @@ function showParentForm(t) {
  */
 function showChildrenForm(t) {
 	return t.popup({
-		'title': 'Add a task',
+		title: 'Add a task',
 		search: {
 			placeholder: 'Search or paste a link',
 			empty: 'Not found in card titles. — You can also paste a link to a card.',
@@ -798,7 +586,7 @@ function showChildrenForm(t) {
 		},
 		items: function(t, options) {
 			return searchCards(t, options, 'child', function(t, card) {
-				addChildToContext(t, card);
+				addChild(t, card);
 				t.closePopup();
 			});
 		},
@@ -807,292 +595,35 @@ function showChildrenForm(t) {
 
 /**
  * @param  {object} t context
- * @param  {string} badgeType one of 'card-badges' or 'card-detail-badges'
- * @return {object} one of:
- * {}
- * {
- *         @var {string} title
- *         @var {string} text
- *         @var {Function} callback
- * }
- * {
- *         @var {string} icon
- *         @var {string} text
- *         @var {string} color
- * }
+ * @return {object}
  */
-function showParentState(t, badgeType) {
-	// process queue
-	const cardId = t.getContext().card;
-	t.get('organization', 'shared', 'parentAttachmentId-' + cardId).then(function(parentAttachmentId) {
-		if (parentAttachmentId === 'remove') {
-			t.remove('card', 'shared', 'parentAttachmentId').then(function() {
-				t.remove('organization', 'shared', 'parentAttachmentId-' + cardId);
-			});
-		}
-		else if (parentAttachmentId !== undefined) {
-			t.set('card', 'shared', 'parentAttachmentId', parentAttachmentId).then(function() {
-				t.remove('organization', 'shared', 'parentAttachmentId-' + cardId);
-			});
-		}
-	});
-	t.get('organization', 'shared', 'parentNameRecache-' + cardId).then(function(parentNewName) {
-		if (parentNewName !== undefined) {
-			t.remove('organization', 'shared', 'parentNameRecache-' + cardId);
+function showDebug(t) {
+	return t.popup({
+		title: 'Add a task',
+		items: async function(t, options) {
+			let items = [];
 			
-			if (parentNewName === false) {
-				t.remove('card', 'shared', 'parentName');
+			const parent   = await t.get('card', 'shared', 'parent');
+			if (parent !== undefined) {
+				items.push({text: 'parent.attachmentId: ' + parent.attachmentId});
+				items.push({text: 'parent.shortLink: ' + parent.shortLink});
+				items.push({text: 'parent.name: ' + parent.name});
+				items.push({text: 'parent.badges: ' + JSON.stringify(parent.badges)});
 			}
 			else {
-				t.set('card', 'shared', 'parentName', parentNewName);
-			}
-		}
-	});
-	
-	return t.get('card', 'shared', 'parentAttachmentId').then(async function(parentAttachmentId) {
-		if (parentAttachmentId === undefined) {
-			// @todo only do this if the card modified date changed
-			const childCardName = await t.card('name').then(function(card) { return card.name; });
-			return t.card('attachments').then(async function(card) {
-				if (card.attachments.length === 0) {
-					return {};
-				}
-				
-				for (let attachment of card.attachments) {
-					const parentCardShortLink = getCardShortLinkFromUrl(attachment.url);
-					if (parentCardShortLink === undefined) {
-						continue;
-					}
-					
-					initializeAuthorization(t).then(async function(isAuthorized) {
-						if (isAuthorized === false) {
-							return;
-						}
-						
-						const result = await isParentOfContext(t, parentCardShortLink);
-						console.debug('isParentOfContext', result);
-					});
-					
-					if (childCheckItem === undefined) {
-						return {text: 'has a random attachment'};
-					}
-					else {
-						return {text: 'has a parent attachment'};
-					}
-				}
-				
-				return {};
-			});
-			return {};
-		}
-		
-		const parentName = await t.get('card', 'shared', 'parentName').then(function(parentName) {
-			if (parentName === undefined) {
-				return recacheParentByContext(t, parentAttachmentId);
+				items.push({text: 'parent: -'});
 			}
 			
-			return parentName;
-		});
-		
-		if (badgeType === 'card-detail-badges') {
-			const parentCardShortLink = await getParentShortLinkByAttachmentId(t, parentAttachmentId);
-			
-			// cleanup in case the attachment got removed manually
-			// @todo store the parent card id in the child as well to allow auto cleaning up of the child link from the parent's checklist
-			if (parentCardShortLink === undefined) {
-				t.remove('card', 'shared', 'parentAttachmentId');
-				t.alert({
-					message:  'Please open the EPIC and remove the checkitem to this task. Note: this happens automatically if you use the card button to remove the EPIC.',
-					duration: 15,
-				});
-				
-				return {};
+			const children = await t.get('card', 'shared', 'children');
+			if (children !== undefined) {
+				items.push({text: 'children.checklistId: ' + children.checklistId});
+				items.push({text: 'children.shortLinks: ' + children.shortLinks.join(',')});
+				items.push({text: 'children.counts: ' + JSON.stringify(children.counts)});
+				items.push({text: 'children.badges: ' + JSON.stringify(children.badges)});
 			}
 			
-			return {
-				title: 'Part of EPIC',
-				text:  parentName,
-				callback: function(t, options) {
-					t.showCard(parentCardShortLink);
-				},
-			};
-		}
-		else {
-			return {
-				icon:  ICON_UP,
-				text:  'part of ' + parentName,
-				color: 'light-gray',
-			};
-		}
-	});
-}
-
-/**
- * @param  {object} t context
- * @param  {string} childCardId
- */
-function markToRecacheOnRelatedChild(t, childCardId, newName) {
-	t.set('organization', 'shared', 'parentNameRecache-' + childCardId, newName);
-}
-
-/**
- * @param  {object} t context
- * @param  {string} parentCardId
- */
-function markToRecacheOnRelatedParent(t, parentCardId) {
-	t.set('organization', 'shared', 'childrenChecklistRecache-' + parentCardId, true);
-}
-
-/**
- * @param  {object} t context
- * @return {string} name of parent card
- */
-function recacheParentByContext(t) {
-	return t.get('card', 'shared', 'parentAttachmentId').then(async function(parentAttachmentId) {
-		const parentCardShortLink = await getParentShortLinkByAttachmentId(t, parentAttachmentId);
-		
-		const parentCard = await t.cards('shortLink', 'name').then(async function(cards) {
-			let matchingCard = cards.find(function(card) {
-				return (card.shortLink === parentCardShortLink);
-			});
-			
-			if (matchingCard === undefined) {
-				matchingCard = initializeAuthorization(t).then(async function(isAuthorized) {
-					if (isAuthorized === false) {
-						return undefined;
-					}
-					
-					return await getCardByIdOrShortLink(t, parentCardShortLink);
-				});
-			}
-			
-			return matchingCard;
-		});
-		
-		if (parentCard === undefined) {
-			return 'an EPIC';
-		}
-		
-		t.set('card', 'shared', 'parentName', parentCard.name);
-		
-		return parentCard.name;
-	});
-}
-
-/**
- * recache data on the parent card
- * 
- * - the shortLinks of children
- * - the number of (completed) children
- * 
- * @param  {object} t context
- * @param  {number} retries
- */
-function recacheChildrenByContext(t, retries=3) {
-	t.get('card', 'shared', 'childrenChecklistId').then(function(childrenChecklistId) {
-		if (childrenChecklistId === undefined) {
-			// re-try since the checklist isn't there yet
-			if (retries > 0) {
-				setTimeout(function() {
-					retries -= 1;
-					recacheChildrenByContext(t, retries);
-				}, 250);
-			}
-			else {
-				t.set('card', 'shared', 'childrenCounts', {});
-				t.set('card', 'shared', 'childrenShortLinks', []);
-			}
-			
-			return;
-		}
-		
-		initializeAuthorization(t).then(function(isAuthorized) {
-			if (isAuthorized === false) {
-				return;
-			}
-			
-			getCheckItemsFromRelatedParent(t, childrenChecklistId).then(function(checkItems) {
-				let shortLinks = [];
-				let counts     = {
-					total: checkItems.length,
-					done:  0,
-				};
-				
-				for (let checkItem of checkItems) {
-					shortLinks.push(getCardShortLinkFromUrl(checkItem.name));
-					
-					if (checkItem.state === 'complete') {
-						counts.done++;
-					}
-				}
-				
-				t.set('card', 'shared', 'childrenCounts', counts);
-				t.set('card', 'shared', 'childrenShortLinks', shortLinks);
-			});
-		});
-	});
-}
-
-/**
- * @param  {object} t context
- * @param  {string} badgeType one of 'card-badges' or 'card-detail-badges'
- * @return {object} one of:
- * {}
- * {
- *         @var {string} title
- *         @var {string} text
- *         @var {string} color
- * }
- * {
- *         @var {string} icon
- *         @var {string} text
- *         @var {string} color
- * }
- */
-function showChildrenState(t, badgeType) {
-	// process queue
-	const cardId = t.getContext().card;
-	t.get('organization', 'shared', 'childrenChecklistId-' + cardId).then(function(childrenChecklistId) {
-		if (childrenChecklistId !== undefined) {
-			t.set('card', 'shared', 'childrenChecklistId', childrenChecklistId).then(function() {
-				t.remove('organization', 'shared', 'childrenChecklistId-' + cardId);
-			});
-		}
-	});
-	t.get('organization', 'shared', 'childrenChecklistRecache-' + cardId).then(function(childrenChecklistRecache) {
-		if (childrenChecklistRecache !== undefined) {
-			t.remove('organization', 'shared', 'childrenChecklistRecache-' + cardId);
-			recacheChildrenByContext(t);
-		}
-	});
-	
-	return t.get('card', 'shared', 'childrenChecklistId').then(async function(childrenChecklistId) {
-		if (childrenChecklistId === undefined) {
-			return {};
-		}
-		
-		const counts = await t.get('card', 'shared', 'childrenCounts');
-		if (counts === undefined) {
-			// sometimes we're too early
-			// don't mark to recache since the recacher will already re-try
-			// and we'll do it on the wrong moment
-			return {};
-		}
-		
-		if (badgeType === 'card-detail-badges') {
-			return {
-				title: 'Tasks',
-				text:  counts.done + '/' + counts.total,
-				color: (counts.done > 0 && counts.done === counts.total) ? 'green' : 'light-gray',
-			};
-		}
-		else {
-			return {
-				icon:  ICON_DOWN,
-				text:  counts.done + '/' + counts.total + ' tasks',
-				color: (counts.done > 0 && counts.done === counts.total) ? 'green' : 'light-gray',
-			};
-		}
+			return items;
+		},
 	});
 }
 
@@ -1149,6 +680,12 @@ TrelloPowerUp.initialize({
 					condition: 'edit',
 					callback:  showChildrenForm,
 				},
+				{
+					text:      'Debug',
+					icon:      FAVICON,
+					condition: 'edit',
+					callback:  showDebug,
+				}
 			];
 		});
 	},
@@ -1156,12 +693,12 @@ TrelloPowerUp.initialize({
 		return [
 			{
 				dynamic: function() {
-					return showParentState(t, options.context.command);
+					return showBadgeOnParent(t, options.context.command);
 				},
 			},
 			{
 				dynamic: function() {
-					return showChildrenState(t, options.context.command);
+					return showBadgeOnChild(t, options.context.command, options.attachments);
 				},
 			},
 		];
@@ -1170,12 +707,12 @@ TrelloPowerUp.initialize({
 		return [
 			{
 				dynamic: function() {
-					return showParentState(t, options.context.command);
+					return showBadgeOnParent(t, options.context.command);
 				},
 			},
 			{
 				dynamic: function() {
-					return showChildrenState(t, options.context.command);
+					return showBadgeOnChild(t, options.context.command);
 				},
 			},
 		];
