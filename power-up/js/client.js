@@ -95,8 +95,8 @@ async function getChecklists(t, parentCardIdOrShortLink) {
 	}
 }
 
-async function hasParentToConnect(t, attachments) {
-	// @todo check last modified against a cache
+async function shouldSyncParent(t, attachments) {
+	// @todo cache last modified so we only check if something has canged
 	
 	if (attachments === undefined) {
 		attachments = await t.card('attachments').then(function(card) {
@@ -146,8 +146,8 @@ async function hasParentToConnect(t, attachments) {
 	return false;
 }
 
-async function hasChildrenToConnect(t) {
-	// @todo check last modified against a cache
+async function shouldSyncChildren(t) {
+	// @todo cache last modified so we only check if something has canged
 	
 	const isAuthorized = await initializeAuthorization(t);
 	if (isAuthorized === false) {
@@ -353,24 +353,24 @@ async function searchCards(t, options, parentOrChild, callback) {
 
 async function addParent(t, parentCard) {
 	const childCardId = t.getContext().card;
-	const attachment  = await addAttachment(t, parentCard, childCardId);
+	const attachment  = await createAttachment(t, parentCard, childCardId);
 	storeParent(t, parentCard, attachment);
 	
 	const childCard = await t.card('url');
 	// @todo don't create double checklists
-	const checklist = await addChecklist(t, parentCard.id);
-	addCheckItem(t, childCard, checklist.id);
+	const checklist = await createChecklist(t, parentCard.id);
+	createCheckItem(t, childCard, checklist.id);
 }
 
 async function addChild(t, childCard) {
 	const parentCardId = t.getContext().card;
 	// @todo don't create double checklists
-	const checklist    = await addChecklist(t, parentCardId);
-	addCheckItem(t, childCard, checklist.id);
+	const checklist    = await createChecklist(t, parentCardId);
+	createCheckItem(t, childCard, checklist.id);
 	storeChild(t, childCard, checklist);
 	
 	const parentCard = await t.card('url');
-	addAttachment(t, parentCard, childCard.id);
+	createAttachment(t, parentCard, childCard.id);
 }
 
 function storeParent(t, parentCard, attachment) {
@@ -409,7 +409,7 @@ function storeChild(t, childCard, checklist) {
  * @param {string} childCardIdOrShortLink
  * @return {Promise}
  */
-function addAttachment(t, parentCard, childCardIdOrShortLink) {
+function createAttachment(t, parentCard, childCardIdOrShortLink) {
 	const postData = {
 		name: 'EPIC',
 		url:  parentCard.url,
@@ -437,7 +437,7 @@ function addAttachment(t, parentCard, childCardIdOrShortLink) {
  * @param {object} parentCardIdOrShortLink
  * @return {Promise}
  */
-function addChecklist(t, parentCardIdOrShortLink) {
+function createChecklist(t, parentCardIdOrShortLink) {
 	const postData = {
 		name: 'Tasks',
 		pos:  'top',
@@ -466,7 +466,7 @@ function addChecklist(t, parentCardIdOrShortLink) {
  * @param {string} checklistId
  * @return {Promise}
  */
-function addCheckItem(t, childCard, checklistId) {
+function createCheckItem(t, childCard, checklistId) {
 	const postData = {
 		name: childCard.url,
 		pos:  'bottom',
@@ -490,7 +490,7 @@ function addCheckItem(t, childCard, checklistId) {
 function showBadgeOnParent(t, badgeType) {
 	return t.get('card', 'shared', 'children').then(async function(children) {
 		if (children === undefined) {
-			hasChildrenToConnect(t).then(function(childrenData) {
+			shouldSyncChildren(t).then(function(childrenData) {
 				if (childrenData !== false) {
 					for (let childShortLink of childrenData.shortLinks) {
 						storeChild(t, {shortLink: childShortLink}, childrenData.checklist);
@@ -524,7 +524,7 @@ function showBadgeOnParent(t, badgeType) {
 function showBadgeOnChild(t, badgeType, attachments) {
 	return t.get('card', 'shared', 'parent').then(async function(parent) {
 		if (parent === undefined) {
-			hasParentToConnect(t, attachments).then(function(parentData) {
+			shouldSyncParent(t, attachments).then(function(parentData) {
 				if (parentData !== false) {
 					storeParent(t, parentData.parentCard, parentData.attachment);
 				}
