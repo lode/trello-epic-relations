@@ -221,16 +221,18 @@ async function searchCards(t, options, parentOrChild, callback) {
 	const searchTerm = options.search;
 	
 	// collect current parent
-	let parentCardShortLink = undefined;
-	// @todo re-enable filtering out existing relations
-	//#await t.get('card', 'shared', 'parentAttachmentId').then(async function(parentAttachmentId) {
-	//#	if (parentAttachmentId !== undefined) {
-	//#		parentCardShortLink = await getParentShortLinkByAttachmentId(t, parentAttachmentId);
-	//#	}
-	//#});
+	let parentCardShortLink = await t.get('card', 'shared', 'parent').then(function(parent) {
+		if (parent !== undefined) {
+			return parent.shortLink;
+		}
+	});
 	
 	// get current children
-	const childCardShortLinks = []; //# await t.get('card', 'shared', 'childrenShortLinks');
+	const childCardShortLinks = await t.get('card', 'shared', 'children').then(function(children) {
+		if (children !== undefined) {
+			return children.shortLinks;
+		}
+	});
 	
 	// offer to add by card link
 	if (searchTerm !== '' && searchTerm.indexOf('https://trello.com/c/') === 0) {
