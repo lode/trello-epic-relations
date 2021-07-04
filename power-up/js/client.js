@@ -30,6 +30,7 @@ function getCardShortLinkFromUrl(cardUrl) {
  *         @var {string} id
  *         @var {string} name
  *         @var {string} url
+ *         @var {string} shortLink
  * }
  */
 async function getCardByIdOrShortLink(t, cardIdOrShortLink) {
@@ -41,9 +42,10 @@ async function getCardByIdOrShortLink(t, cardIdOrShortLink) {
 		});
 		
 		return {
-			id:   response.id,
-			name: response.name,
-			url:  response.url,
+			id:        response.id,
+			name:      response.name,
+			url:       response.url,
+			shortLink: response.shortLink,
 		};
 	}
 	catch (error) {
@@ -608,7 +610,6 @@ function showDebug(t) {
 				items.push({text: 'parent.attachmentId: ' + parent.attachmentId});
 				items.push({text: 'parent.shortLink: ' + parent.shortLink});
 				items.push({text: 'parent.name: ' + parent.name});
-				items.push({text: 'parent.badges: ' + JSON.stringify(parent.badges)});
 			}
 			else {
 				items.push({text: 'parent: -'});
@@ -617,9 +618,11 @@ function showDebug(t) {
 			const children = await t.get('card', 'shared', 'children');
 			if (children !== undefined) {
 				items.push({text: 'children.checklistId: ' + children.checklistId});
-				items.push({text: 'children.shortLinks: ' + children.shortLinks.join(',')});
+				items.push({text: 'children.shortLinks: ' + JSON.stringify(children.shortLinks)});
 				items.push({text: 'children.counts: ' + JSON.stringify(children.counts)});
-				items.push({text: 'children.badges: ' + JSON.stringify(children.badges)});
+			}
+			else {
+				items.push({text: 'children: -'});
 			}
 			
 			return items;
