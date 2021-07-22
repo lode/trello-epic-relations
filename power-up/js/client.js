@@ -95,6 +95,27 @@ async function getChecklists(t, parentCardIdOrShortLink) {
 	}
 }
 
+/**
+ * @param  {object} t without context
+ * @param  {string} checklistId
+ * @return {Promise}
+ */
+function getCheckItems(t, checklistId) {
+	try {
+		return window.Trello.get('checklists/' + checklistId + '/checkItems?fields=name,state', {}, null,
+		function(error) {
+			t.alert({
+				message: JSON.stringify(error, null, '\t'),
+			});
+		});
+	}
+	catch (error) {
+		t.alert({
+			message: JSON.stringify(error, null, '\t'),
+		});
+	}
+}
+
 async function shouldSyncParent(t, attachments) {
 	// @todo cache last modified so we only check if something has canged
 	
@@ -146,7 +167,7 @@ async function shouldSyncParent(t, attachments) {
 	return false;
 }
 
-async function shouldSyncChildren(t) {
+async function shouldSyncChildren(t, currentData) {
 	// @todo cache last modified so we only check if something has canged
 	
 	const isAuthorized = await initializeAuthorization(t);
@@ -154,12 +175,7 @@ async function shouldSyncChildren(t) {
 		return false;
 	}
 	
-	const parentCardId = t.getContext().card;
-	const checklists = await getChecklists(t, parentCardId);
-	if (checklists.length === 0) {
-		return false;
-	}
-	
+	// @todo move down after fetching checklists?
 	const parentShortLink = await t.card('shortLink').then(function(card) {
 		return card.shortLink;
 	})
@@ -167,44 +183,80 @@ async function shouldSyncChildren(t) {
 	let childShortLink;
 	let parentOfChild;
 	let childrenShortLinks;
+	let childrenCheckItems;
 	
-	// @todo check if we already know the checklist
-	// @todo check which children we already know
-	
-	for (let checklist of checklists) {
-		if (checklist.checkItems.length === 0) {
-			continue;
+	if (currentData !== undefined) {
+		const checkItems = await getCheckItems(t, currentData.checklistId);
+		const newData    = await collectChildrenDataToSync(t, checkItems, parentShortLink, currentData);
+		if (newData === undefined || JSON.stringify(newData) === JSON.stringify(currentData)) {
+			return false;
 		}
 		
-		childrenShortLinks = [];
-		for (let checkItem of checklist.checkItems) {
-			childShortLink = getCardShortLinkFromUrl(checkItem.name);
-			if (childShortLink === undefined) {
+		return newData;
+	}
+	else {
+		const parentCardId = t.getContext().card;
+		const checklists   = await getChecklists(t, parentCardId);
+		if (checklists.length === 0) {
+			return false;
+		}
+		
+		let newData;
+		for (let checklist of checklists) {
+			newData = await collectChildrenDataToSync(t, checklist.checkItems, parentShortLink, currentData);
+			if (newData === undefined) {
 				continue;
 			}
 			
-			parentOfChild = await getPluginData(t, childShortLink, 'parent');
-			if (parentOfChild === undefined) {
-				continue;
-			}
-			if (parentOfChild.shortLink !== parentShortLink) {
-				break;
-			}
-			
-			childrenShortLinks.push(childShortLink);
-		}
-		
-		if (childrenShortLinks.length === 0) {
-			continue;
-		}
-		
-		return {
-			shortLinks: childrenShortLinks,
-			checklist:  checklist,
+			return newData;
 		}
 	}
 	
 	return false;
+}
+
+async function collectChildrenDataToSync(t, checkItems, parentShortLink, currentData) {
+	if (checkItems.length === 0 && currentData === undefined) {
+		return;
+	}
+	
+	let shortLinks   = [];
+	let checkItemIds = {};
+	let counts       = {total: 0, done:  0};
+	
+	let childShortLink;
+	let parentOfChild;
+	
+	for (let checkItem of checkItems) {
+		childShortLink = getCardShortLinkFromUrl(checkItem.name);
+		if (childShortLink === undefined) {
+			continue;
+		}
+		
+		parentOfChild = await getPluginData(t, childShortLink, 'parent');
+		if (parentOfChild === undefined) {
+			// @todo needs different behavior if checklist was certain
+			continue;
+		}
+		if (parentOfChild.shortLink !== parentShortLink) {
+			// @todo needs different behavior if checklist was certain
+			return;
+		}
+		
+		shortLinks.push(childShortLink);
+		checkItemIds[childShortLink] = checkItem.id;
+		counts.total += 1;
+		if (checkItem.state === 'complete') {
+			counts.done += 1;
+		}
+	}
+	
+	return {
+		checklistId:  checkItems[0].idChecklist,
+		shortLinks:   shortLinks,
+		checkItemIds: checkItemIds,
+		counts:       counts,
+	}
 }
 
 /**
@@ -356,21 +408,37 @@ async function addParent(t, parentCard) {
 	const attachment  = await createAttachment(t, parentCard, childCardId);
 	storeParent(t, parentCard, attachment);
 	
+	const checklistId = await getPluginData(t, parentCard.shortLink, 'children').then(async function(childrenData) {
+		if (childrenData !== undefined) {
+			return childrenData.checklistId;
+		}
+		
+		const checklist = await createChecklist(t, parentCard.id);
+		
+		return checklist.id;
+	});
+	
 	const childCard = await t.card('url');
-	// @todo don't create double checklists
-	const checklist = await createChecklist(t, parentCard.id);
-	createCheckItem(t, childCard, checklist.id);
+	createCheckItem(t, childCard, checklistId);
 }
 
 async function addChild(t, childCard) {
-	const parentCardId = t.getContext().card;
-	// @todo don't create double checklists
-	const checklist    = await createChecklist(t, parentCardId);
-	createCheckItem(t, childCard, checklist.id);
-	storeChild(t, childCard, checklist);
+	const checklistId = await t.get('card', 'shared', 'children').then(async function(childrenData) {
+		if (childrenData !== undefined) {
+			return childrenData.checklistId;
+		}
+		
+		const parentCardId = t.getContext().card;
+		const checklist    = await createChecklist(t, parentCardId);
+		
+		return checklist.id;
+	});
+	
+	const checkItem = await createCheckItem(t, childCard, checklistId);
+	await storeChild(t, checklistId, childCard, checkItem);
 	
 	const parentCard = await t.card('url');
-	createAttachment(t, parentCard, childCard.id);
+	await createAttachment(t, parentCard, childCard.id);
 }
 
 function storeParent(t, parentCard, attachment) {
@@ -381,21 +449,27 @@ function storeParent(t, parentCard, attachment) {
 	});
 }
 
-function storeChild(t, childCard, checklist) {
-	t.get('card', 'shared', 'children').then(function(children) {
+function storeChild(t, checklistId, childCard, checkItem) {
+	t.get('card', 'shared', 'children').then(async function(children) {
 		if (children === undefined) {
 			children = {
-				checklistId: checklist.id,
-				shortLinks:  [],
-				counts:      {total: 0, done:  0},
+				checklistId:  checklistId,
+				shortLinks:   [],
+				checkItemIds: {},
+				counts:       {total: 0, done:  0},
 			};
 		}
 		
 		children.shortLinks.push(childCard.shortLink);
+		children.checkItemIds[childCard.shortLink] = checkItem.id;
 		children.counts.total += 1;
 		
 		t.set('card', 'shared', 'children', children);
 	});
+}
+
+function storeChildren(t, childrenData) {
+	t.set('card', 'shared', 'children', childrenData);
 }
 
 /**
@@ -489,16 +563,16 @@ function createCheckItem(t, childCard, checklistId) {
 
 function showBadgeOnParent(t, badgeType) {
 	return t.get('card', 'shared', 'children').then(async function(childrenData) {
-		if (childrenData === undefined) {
-			shouldSyncChildren(t).then(function(newData) {
+		if (badgeType === 'card-badges') {
+			shouldSyncChildren(t, childrenData).then(function(newData) {
 				if (newData !== false) {
-					for (let childShortLink of newData.shortLinks) {
-						storeChild(t, {shortLink: childShortLink}, newData.checklist);
-					}
+					storeChildren(t, newData);
 				}
 			});
-			
-			return {};
+		}
+		
+		if (childrenData === undefined) {
+		 	return {};
 		}
 		
 		const color = (childrenData.counts.done > 0 && childrenData.counts.done === childrenData.counts.total) ? 'green' : 'light-gray';
@@ -621,6 +695,7 @@ function showDebug(t) {
 			if (children !== undefined) {
 				items.push({text: 'children.checklistId: ' + children.checklistId});
 				items.push({text: 'children.shortLinks: ' + JSON.stringify(children.shortLinks)});
+				items.push({text: 'children.checkItemIds: ' + JSON.stringify(children.checkItemIds)});
 				items.push({text: 'children.counts: ' + JSON.stringify(children.counts)});
 			}
 			else {
