@@ -488,12 +488,12 @@ function createCheckItem(t, childCard, checklistId) {
 }
 
 function showBadgeOnParent(t, badgeType) {
-	return t.get('card', 'shared', 'children').then(async function(children) {
-		if (children === undefined) {
-			shouldSyncChildren(t).then(function(childrenData) {
-				if (childrenData !== false) {
-					for (let childShortLink of childrenData.shortLinks) {
-						storeChild(t, {shortLink: childShortLink}, childrenData.checklist);
+	return t.get('card', 'shared', 'children').then(async function(childrenData) {
+		if (childrenData === undefined) {
+			shouldSyncChildren(t).then(function(newData) {
+				if (newData !== false) {
+					for (let childShortLink of newData.shortLinks) {
+						storeChild(t, {shortLink: childShortLink}, newData.checklist);
 					}
 				}
 			});
@@ -501,20 +501,20 @@ function showBadgeOnParent(t, badgeType) {
 			return {};
 		}
 		
-		const color = (children.counts.done > 0 && children.counts.done === children.counts.total) ? 'green' : 'light-gray';
+		const color = (childrenData.counts.done > 0 && childrenData.counts.done === childrenData.counts.total) ? 'green' : 'light-gray';
 		
 		switch (badgeType) {
 			case 'card-badges':
 				return {
 					icon:  ICON_DOWN,
-					text:  children.counts.done + '/' + children.counts.total + ' tasks',
+					text:  childrenData.counts.done + '/' + childrenData.counts.total + ' tasks',
 					color: color,
 				};
 			
 			case 'card-detail-badges':
 				return {
 					title: 'Tasks',
-					text:  children.counts.done + '/' + children.counts.total,
+					text:  childrenData.counts.done + '/' + childrenData.counts.total,
 					color: color,
 				};
 		}
@@ -522,11 +522,11 @@ function showBadgeOnParent(t, badgeType) {
 }
 
 function showBadgeOnChild(t, badgeType, attachments) {
-	return t.get('card', 'shared', 'parent').then(async function(parent) {
-		if (parent === undefined) {
-			shouldSyncParent(t, attachments).then(function(parentData) {
-				if (parentData !== false) {
-					storeParent(t, parentData.parentCard, parentData.attachment);
+	return t.get('card', 'shared', 'parent').then(async function(parentData) {
+		if (parentData === undefined) {
+			shouldSyncParent(t, attachments).then(function(syncData) {
+				if (syncData !== false) {
+					storeParent(t, syncData.parentCard, syncData.attachment);
 				}
 			});
 			
@@ -537,16 +537,16 @@ function showBadgeOnChild(t, badgeType, attachments) {
 			case 'card-badges':
 				return {
 					icon:  ICON_UP,
-					text:  'part of ' + parent.name,
+					text:  'part of ' + parentData.name,
 					color: 'light-gray',
 				};
 			
 			case 'card-detail-badges':
 				return {
 					title: 'Part of EPIC',
-					text:  parent.name,
+					text:  parentData.name,
 					callback: function(t, options) {
-						t.showCard(parent.shortLink);
+						t.showCard(parentData.shortLink);
 					},
 				};
 		}
