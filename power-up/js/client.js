@@ -423,6 +423,8 @@ async function addParent(t, parentCard) {
 }
 
 async function addChild(t, childCard) {
+	await t.set('card', 'shared', 'updating', true);
+	
 	const checklistId = await t.get('card', 'shared', 'children').then(async function(childrenData) {
 		if (childrenData !== undefined) {
 			return childrenData.checklistId;
@@ -439,6 +441,10 @@ async function addChild(t, childCard) {
 	
 	const parentCard = await t.card('url');
 	await createAttachment(t, parentCard, childCard.id);
+	
+	setTimeout(function() {
+		t.remove('card', 'shared', 'updating');
+	}, 100);
 }
 
 function storeParent(t, parentCard, attachment) {
@@ -564,11 +570,14 @@ function createCheckItem(t, childCard, checklistId) {
 function showBadgeOnParent(t, badgeType) {
 	return t.get('card', 'shared', 'children').then(async function(childrenData) {
 		if (badgeType === 'card-badges') {
-			shouldSyncChildren(t, childrenData).then(function(newData) {
-				if (newData !== false) {
-					storeChildren(t, newData);
-				}
-			});
+			const updating = await t.get('card', 'shared', 'updating');
+			if (updating === undefined) {
+				shouldSyncChildren(t, childrenData).then(function(newData) {
+					if (newData !== false) {
+						storeChildren(t, newData);
+					}
+				});
+			}
 		}
 		
 		if (childrenData === undefined) {
