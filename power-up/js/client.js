@@ -420,8 +420,11 @@ async function addParent(t, parentCard) {
 		return checklist.id;
 	});
 	
-	const childCard = await t.card('url');
-	createCheckItem(t, childCard, checklistId);
+	const childCard = await t.card('url', 'shortLink');
+	const checkItem = await createCheckItem(t, childCard, checklistId);
+	
+	// @todo fix for cards from other boards
+	storeChild(t, checklistId, childCard, checkItem, parentCard.id);
 	
 	setTimeout(function() {
 		t.remove('card', 'shared', 'updating');
@@ -445,26 +448,29 @@ async function addChild(t, childCard) {
 	const checkItem = await createCheckItem(t, childCard, checklistId);
 	await storeChild(t, checklistId, childCard, checkItem);
 	
-	const parentCard = await t.card('url');
-	await createAttachment(t, parentCard, childCard.id);
+	const parentCard = await t.card('name', 'url', 'shortLink');
+	const attachment = await createAttachment(t, parentCard, childCard.id);
+	
+	// @todo fix for cards from other boards
+	storeParent(t, parentCard, attachment, childCard.id);
 	
 	setTimeout(function() {
 		t.remove('card', 'shared', 'updating');
 	}, 100);
 }
 
-function storeParent(t, parentCard, attachment) {
-	t.set('card', 'shared', 'parent', {
+function storeParent(t, parentCard, attachment, contextCardId='card') {
+	t.set(contextCardId, 'shared', 'parent', {
 		attachmentId: attachment.id,
 		shortLink:    parentCard.shortLink,
 		name:         parentCard.name,
 	});
 }
 
-function storeChild(t, checklistId, childCard, checkItem) {
-	t.get('card', 'shared', 'children').then(async function(children) {
-		if (children === undefined) {
-			children = {
+function storeChild(t, checklistId, childCard, checkItem, contextCardId='card') {
+	t.get(contextCardId, 'shared', 'children').then(async function(childrenData) {
+		if (childrenData === undefined) {
+			childrenData = {
 				checklistId:  checklistId,
 				shortLinks:   [],
 				checkItemIds: {},
@@ -472,16 +478,16 @@ function storeChild(t, checklistId, childCard, checkItem) {
 			};
 		}
 		
-		children.shortLinks.push(childCard.shortLink);
-		children.checkItemIds[childCard.shortLink] = checkItem.id;
-		children.counts.total += 1;
+		childrenData.shortLinks.push(childCard.shortLink);
+		childrenData.checkItemIds[childCard.shortLink] = checkItem.id;
+		childrenData.counts.total += 1;
 		
-		t.set('card', 'shared', 'children', children);
+		t.set(contextCardId, 'shared', 'children', childrenData);
 	});
 }
 
-function storeChildren(t, childrenData) {
-	t.set('card', 'shared', 'children', childrenData);
+function storeChildren(t, childrenData, contextCardId='card') {
+	t.set(contextCardId, 'shared', 'children', childrenData);
 }
 
 /**
@@ -575,16 +581,16 @@ function createCheckItem(t, childCard, checklistId) {
 
 function showBadgeOnParent(t, badgeType) {
 	return t.get('card', 'shared', 'children').then(async function(childrenData) {
-		if (badgeType === 'card-badges') {
-			const updating = await t.get('card', 'shared', 'updating');
-			if (updating === undefined) {
-				shouldSyncChildren(t, childrenData).then(function(newData) {
-					if (newData !== false) {
-						storeChildren(t, newData);
-					}
-				});
-			}
-		}
+		//#if (badgeType === 'card-badges') {
+		//#	const updating = await t.get('card', 'shared', 'updating');
+		//#	if (updating === undefined) {
+		//#		shouldSyncChildren(t, childrenData).then(function(newData) {
+		//#			if (newData !== false) {
+		//#				storeChildren(t, newData);
+		//#			}
+		//#		});
+		//#	}
+		//#}
 		
 		if (childrenData === undefined) {
 		 	return {};
@@ -612,16 +618,16 @@ function showBadgeOnParent(t, badgeType) {
 
 function showBadgeOnChild(t, badgeType, attachments) {
 	return t.get('card', 'shared', 'parent').then(async function(parentData) {
-		if (badgeType === 'card-badges') {
-			const updating = await t.get('card', 'shared', 'updating');
-			if (updating === undefined) {
-				shouldSyncParent(t, attachments).then(function(syncData) {
-					if (syncData !== false) {
-						storeParent(t, syncData.parentCard, syncData.attachment);
-					}
-				});
-			}
-		}
+		//#if (badgeType === 'card-badges') {
+		//#	const updating = await t.get('card', 'shared', 'updating');
+		//#	if (updating === undefined) {
+		//#		shouldSyncParent(t, attachments).then(function(syncData) {
+		//#			if (syncData !== false) {
+		//#				storeParent(t, syncData.parentCard, syncData.attachment);
+		//#			}
+		//#		});
+		//#	}
+		//#}
 		
 		if (parentData === undefined) {
 			return {};
