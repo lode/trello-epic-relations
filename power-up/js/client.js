@@ -725,26 +725,40 @@ function showChildrenForm(t) {
  */
 function showDebug(t) {
 	return t.popup({
-		title: 'Add a task',
+		title: 'Debug EPIC relation',
 		items: async function(t, options) {
 			let items = [];
 			
-			const parent   = await t.get('card', 'shared', 'parent');
-			if (parent !== undefined) {
-				items.push({text: 'parent.attachmentId: ' + parent.attachmentId});
-				items.push({text: 'parent.shortLink: ' + parent.shortLink});
-				items.push({text: 'parent.name: ' + parent.name});
+			const dateLastActivity = await t.card('dateLastActivity').then(function(card) {
+				return card.dateLastActivity;
+			});
+			items.push({text: 'last activity: ' + dateLastActivity});
+			
+			const pluginData = await t.get('card', 'shared');
+			
+			if (pluginData.updating !== undefined) {
+				items.push({text: 'updating: yes'});
+			}
+			else {
+				items.push({text: 'updating: no'});
+			}
+			
+			if (pluginData.parent !== undefined) {
+				items.push({text: 'parent:'});
+				items.push({text: '- attachmentId: ' + pluginData.parent.attachmentId});
+				items.push({text: '- shortLink: ' + pluginData.parent.shortLink});
+				items.push({text: '- name: ' + pluginData.parent.name});
 			}
 			else {
 				items.push({text: 'parent: -'});
 			}
 			
-			const children = await t.get('card', 'shared', 'children');
-			if (children !== undefined) {
-				items.push({text: 'children.checklistId: ' + children.checklistId});
-				items.push({text: 'children.shortLinks: ' + JSON.stringify(children.shortLinks)});
-				items.push({text: 'children.checkItemIds: ' + JSON.stringify(children.checkItemIds)});
-				items.push({text: 'children.counts: ' + JSON.stringify(children.counts)});
+			if (pluginData.children !== undefined) {
+				items.push({text: 'children:'});
+				items.push({text: '- checklistId: ' + pluginData.children.checklistId});
+				items.push({text: '- shortLinks: ' + JSON.stringify(pluginData.children.shortLinks)});
+				items.push({text: '- checkItemIds: ' + JSON.stringify(pluginData.children.checkItemIds)});
+				items.push({text: '- counts: ' + JSON.stringify(pluginData.children.counts)});
 			}
 			else {
 				items.push({text: 'children: -'});
