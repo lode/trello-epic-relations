@@ -468,16 +468,14 @@ function storeParent(t, parentCard, attachment, contextCardId='card') {
 }
 
 function storeChild(t, checklistId, childCard, checkItem, contextCardId='card') {
-	t.get(contextCardId, 'shared', 'children').then(async function(childrenData) {
-		if (childrenData === undefined) {
-			childrenData = {
-				checklistId:  checklistId,
-				shortLinks:   [],
-				checkItemIds: {},
-				counts:       {total: 0, done:  0},
-			};
-		}
-		
+	const defaultChildrenData = {
+		checklistId:  checklistId,
+		shortLinks:   [],
+		checkItemIds: {},
+		counts:       {total: 0, done:  0},
+	};
+	
+	t.get(contextCardId, 'shared', 'children', defaultChildrenData).then(async function(childrenData) {
 		childrenData.shortLinks.push(childCard.shortLink);
 		childrenData.checkItemIds[childCard.shortLink] = checkItem.id;
 		childrenData.counts.total += 1;
