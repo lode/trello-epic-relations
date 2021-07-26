@@ -615,7 +615,8 @@ function showBadgeOnParent(t, badgeType) {
 				getSyncChildrenData(t, childrenData).then(function(newData) {
 					storeChildren(t, newData);
 				})
-				.catch(function() {
+				.catch(function(error) {
+					console.warn('Error processing queue to sync children', error);
 					t.alert({
 						message: 'Something went wrong adding the task, try creating the relationship again.',
 					});
@@ -659,7 +660,8 @@ function showBadgeOnChild(t, badgeType, attachments) {
 			getSyncParentData(t, attachments).then(function(syncData) {
 				storeParent(t, syncData.parentCard, syncData.attachment);
 			})
-			.catch(function() {
+			.catch(function(error) {
+				console.warn('Error processing queue to sync parent', error);
 				t.alert({
 					message: 'Something went wrong adding the EPIC, try creating the relationship again.',
 				});
