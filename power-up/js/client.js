@@ -58,6 +58,23 @@ async function getCardByIdOrShortLink(t, cardIdOrShortLink) {
 
 async function getPluginData(t, cardIdOrShortLink, parentOrChildren) {
 	try {
+		const pluginDataWithinContext = await t.get(cardIdOrShortLink, 'shared', parentOrChildren);
+		if (pluginDataWithinContext !== undefined) {
+			return pluginDataWithinContext;
+		}
+		
+		// fall-through to get plugin data via API
+	}
+	catch (error) {
+		// supress expected error for cards on other boards
+		if (error.message === undefined || error.message !== 'Card not found or not on current board (Command: data)') {
+			console.warn('Error while fetching card plugin data', error);
+		}
+		
+		// fall-through to get plugin data via API
+	}
+	
+	try {
 		const response = await window.Trello.get('cards/' + cardIdOrShortLink + '?fields=&pluginData=true');
 		if (response.pluginData.length === 0) {
 			return;
