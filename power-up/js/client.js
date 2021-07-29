@@ -393,6 +393,12 @@ async function searchCards(t, options, parentOrChild, callback) {
 async function addParent(t, parentCard) {
 	await t.set('card', 'shared', 'updating', true);
 	
+	await t.get('card', 'shared', 'parent').then(function(parentData) {
+		if (parentData !== undefined) {
+			return removeParent(t, parentData);
+		}
+	});
+	
 	// add parent to child
 	const childCardId = t.getContext().card;
 	const attachment  = await createAttachment(t, parentCard, childCardId);
@@ -568,6 +574,7 @@ function clearStoredChildren(t) {
  * 
  * @param {object} t without context
  * @param {object} parentCard {
+ *        @var {string} name
  *        @var {string} url
  * }
  * @param {string} childCardIdOrShortLink
@@ -575,7 +582,7 @@ function clearStoredChildren(t) {
  */
 function createAttachment(t, parentCard, childCardIdOrShortLink) {
 	const postData = {
-		name: 'EPIC',
+		name: 'EPIC: ' + parentCard.name,
 		url:  parentCard.url,
 	};
 	
