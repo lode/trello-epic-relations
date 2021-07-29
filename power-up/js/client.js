@@ -397,6 +397,7 @@ async function searchCards(t, options, parentOrChild, callback) {
 async function addParent(t, parentCard) {
 	await t.set('card', 'shared', 'updating', true);
 	
+	// check existing parent
 	await t.get('card', 'shared', 'parent').then(function(parentData) {
 		if (parentData !== undefined) {
 			return removeParent(t, parentData);
@@ -439,6 +440,15 @@ async function addParent(t, parentCard) {
 
 async function addChild(t, childCard) {
 	await t.set('card', 'shared', 'updating', true);
+	
+	// check existing parent of child
+	const parentOfChild = await getPluginData(t, childCard.id, 'parent');
+	if (parentOfChild !== undefined) {
+		t.alert({
+			message: 'That task is already part of another EPIC. Change the EPIC on that card to switch.',
+		});
+		return;
+	}
 	
 	// add child to parent
 	const checklistId = await t.get('card', 'shared', 'children').then(async function(childrenData) {
