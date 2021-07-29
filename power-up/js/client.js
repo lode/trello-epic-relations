@@ -361,36 +361,27 @@ async function searchCards(t, options, parentOrChild, callback) {
 			});
 			
 			// add remove buttons
-			// @todo re-enable buttons to remove parent/children
-			//#if (searchTerm === '') {
-			//#	if (parentOrChild === 'parent') {
-			//#		await t.get('card', 'shared', 'parentAttachmentId').then(function(parentAttachmentId) {
-			//#			if (parentAttachmentId !== undefined) {
-			//#				cards.push({
-			//#					text:     '× Remove current EPIC',
-			//#					callback: function(t, options) {
-			//#						removeParentFromContext(t, parentAttachmentId);
-			//#						t.closePopup();
-			//#					},
-			//#				});
-			//#			}
-			//#		});
-			//#	}
-			//#	
-			//#	if (parentOrChild === 'child') {
-			//#		await t.get('card', 'shared', 'childrenChecklistId').then(function(childrenChecklistId) {
-			//#			if (childrenChecklistId !== undefined) {
-			//#				cards.push({
-			//#					text:     '× Remove all tasks (remove the EPIC from the task card to remove a single task)',
-			//#					callback: function(t, options) {
-			//#						removeChildrenFromContext(t);
-			//#						t.closePopup();
-			//#					},
-			//#				});
-			//#			}
-			//#		});
-			//#	}
-			//#}
+			if (searchTerm === '') {
+				if (parentOrChild === 'parent' && pluginData.parent !== undefined) {
+					cards.push({
+						text:     '× Remove current EPIC',
+						callback: function(t, options) {
+							removeParent(t, pluginData.parent);
+							t.closePopup();
+						},
+					});
+				}
+				
+				if (parentOrChild === 'child' && pluginData.children !== undefined) {
+					cards.push({
+						text:     '× Remove all tasks (remove the EPIC from the task card to remove a single task)',
+						callback: function(t, options) {
+							removeChildren(t, pluginData.children);
+							t.closePopup();
+						},
+					});
+				}
+			}
 			
 			return cards;
 		});
@@ -471,6 +462,52 @@ async function addChild(t, childCard) {
 	}, 100);
 }
 
+async function removeParent(t, parentData) {
+	// remove parent from child
+	const childCardId = t.getContext().card;
+	deleteAttachment(t, childCardId, parentData.attachmentId);
+	clearStoredParent(t);
+	
+	// remove child from parent
+	const childCard        = await t.card('shortLink');
+	const childrenOfParent = await getPluginData(t, parentData.shortLink, 'children');
+	const checklistId      = childrenOfParent.checklistId;
+	const checkItemId      = childrenOfParent.checkItemIds[childCard.shortLink];
+	await deleteCheckItem(t, checklistId, checkItemId);
+	
+	const parentCard = await getCardByIdOrShortLink(t, parentData.shortLink);
+	if (parentCard.idBoard !== undefined && parentCard.idBoard !== t.getContext().board) {
+		// use organization-level plugindata to store parent data for cross-board relations
+		queueSyncingChildren(t, parentCard.id);
+	}
+	else {
+		clearStoredChild(t, parentCard.shortLink, childrenOfParent);
+	}
+}
+
+async function removeChildren(t, childrenData) {
+	// remove children from parent
+	const parentCardId = t.getContext().card;
+	deleteChecklist(t, parentCardId, childrenData.checklistId);
+	clearStoredChildren(t);
+	
+	// remove parent from each child
+	let attachmentId = undefined;
+	for (childShortLink of childrenData.shortLinks) {
+		const parentOfChild = await getPluginData(t, childShortLink, 'parent');
+		deleteAttachment(t, childShortLink, parentOfChild.attachmentId);
+		
+		const childCard = await getCardByIdOrShortLink(t, childShortLink);
+		if (childCard.idBoard !== undefined && childCard.idBoard !== t.getContext().board) {
+			// use organization-level plugindata to store parent data for cross-board relations
+			queueSyncingParent(t, childCard.id);
+		}
+		else {
+			clearStoredParent(t, childShortLink);
+		}
+	}
+}
+
 function storeParent(t, parentCard, attachment, contextCardId='card') {
 	t.set(contextCardId, 'shared', 'parent', {
 		attachmentId: attachment.id,
@@ -506,6 +543,21 @@ function queueSyncingChildren(t, parentCardId) {
 
 function queueSyncingParent(t, childCardId) {
 	t.set('organization', 'shared', 'sync-parent-' + childCardId, true);
+}
+
+function clearStoredParent(t, contextCardId='card') {
+	t.remove(contextCardId, 'shared', 'parent');
+}
+
+function clearStoredChild(t, parentShortLink, currentData) {
+	// nothing specific to that child, just sync the current state assuming the checkitem was removed before
+	getSyncChildrenData(t, parentShortLink, currentData).then(function(newData) {
+		storeChildren(t, newData, parentShortLink);
+	})
+}
+
+function clearStoredChildren(t) {
+	t.remove('card', 'shared', 'children');
 }
 
 /**
@@ -584,6 +636,72 @@ function createCheckItem(t, childCard, checklistId) {
 	
 	try {
 		return window.Trello.post('checklists/' + checklistId + '/checkItems', postData, null,
+		function(error) {
+			t.alert({
+				message: JSON.stringify(error, null, '\t'),
+			});
+		});
+	}
+	catch (error) {
+		t.alert({
+			message: JSON.stringify(error, null, '\t'),
+		});
+	}
+}
+
+/**
+ * @param  {object} t without context
+ * @param  {string} cardIdOrShortLink
+ * @param  {string} attachmentId
+ * @return {Promise}
+ */
+function deleteAttachment(t, cardIdOrShortLink, attachmentId) {
+	try {
+		return window.Trello.delete('cards/' + cardIdOrShortLink + '/attachments/' + attachmentId, {}, null,
+		function(error) {
+			t.alert({
+				message: JSON.stringify(error, null, '\t'),
+			});
+		});
+	}
+	catch (error) {
+		t.alert({
+			message: JSON.stringify(error, null, '\t'),
+		});
+	}
+}
+
+/**
+ * @param  {object} t without context
+ * @param  {object} cardIdOrShortLink
+ * @param  {string} checklistId
+ * @return {Promise}
+ */
+function deleteChecklist(t, cardIdOrShortLink, checklistId) {
+	try {
+		return window.Trello.delete('cards/' + cardIdOrShortLink + '/checklists/' + checklistId, {}, null,
+		function(error) {
+			t.alert({
+				message: JSON.stringify(error, null, '\t'),
+			});
+		});
+	}
+	catch (error) {
+		t.alert({
+			message: JSON.stringify(error, null, '\t'),
+		});
+	}
+}
+
+/**
+ * @param  {object} t without context
+ * @param  {string} checklistId
+ * @param  {string} checkItemId
+ * @return {Promise}
+ */
+function deleteCheckItem(t, checklistId, checkItemId) {
+	try {
+		return window.Trello.delete('checklists/' + checklistId + '/checkItems/' + checkItemId, {}, null,
 		function(error) {
 			t.alert({
 				message: JSON.stringify(error, null, '\t'),
