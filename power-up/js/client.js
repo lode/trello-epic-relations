@@ -9,8 +9,8 @@ const ICON_DOWN    = CDN_BASE_URL + 'icon-down.png';
 const LIST_MAXIMUM = 10;
 
 /**
- * @param  {string} cardUrl
- * @return {string} shortLink
+ * @param  {string}           cardUrl
+ * @return {string|undefined} shortLink
  */
 function getCardShortLinkFromUrl(cardUrl) {
 	const matches = cardUrl.match(/^https:\/\/trello\.com\/c\/([^/]+)(\/|$)/);
@@ -24,13 +24,14 @@ function getCardShortLinkFromUrl(cardUrl) {
 }
 
 /**
- * @param  {object} t without context
+ * @param  {object} t                 without context
  * @param  {string} cardIdOrShortLink
- * @return {object} card {
+ * @return {Promise} => {object} card {
  *         @var {string} id
  *         @var {string} name
  *         @var {string} url
  *         @var {string} shortLink
+ *         @var {string} idBoard
  * }
  */
 async function getCardByIdOrShortLink(t, cardIdOrShortLink) {
@@ -56,6 +57,14 @@ async function getCardByIdOrShortLink(t, cardIdOrShortLink) {
 	}
 }
 
+/**
+ * get plugin data from another card when you don't know whether that card is in context or not
+ * 
+ * @param  {object} t                 without context
+ * @param  {string} cardIdOrShortLink
+ * @param  {string} parentOrChildren  'parent' or 'children'
+ * @return {Promise} => {object|undefined} pluginData
+ */
 async function getPluginData(t, cardIdOrShortLink, parentOrChildren) {
 	try {
 		const pluginDataWithinContext = await t.get(cardIdOrShortLink, 'shared', parentOrChildren);
@@ -98,6 +107,11 @@ async function getPluginData(t, cardIdOrShortLink, parentOrChildren) {
 	}
 }
 
+/**
+ * @param  {object} t                       without context
+ * @param  {string} parentCardIdOrShortLink
+ * @return {Promise} => {object[]} checklists
+ */
 async function getChecklists(t, parentCardIdOrShortLink) {
 	try {
 		const response = await window.Trello.get('cards/' + parentCardIdOrShortLink + '?fields=&checklists=all&checklist_fields=all');
@@ -114,9 +128,9 @@ async function getChecklists(t, parentCardIdOrShortLink) {
 }
 
 /**
- * @param  {object} t without context
+ * @param  {object} t           without context
  * @param  {string} checklistId
- * @return {Promise}
+ * @return {Promise} => {object[]} checkItems
  */
 function getCheckItems(t, checklistId) {
 	try {
@@ -134,6 +148,26 @@ function getCheckItems(t, checklistId) {
 	}
 }
 
+/**
+ * get parentData when the relations have changed
+ * 
+ * @param  {object}             t           context
+ * @param  {object[]|undefined} attachments when passed will be used instead of another API call {
+ *         @var {string} id
+ * }
+ * @return {object}             newData {
+ *         @var {object|undefined} parentCard {
+ *              @var {string} id
+ *              @var {string} name
+ *              @var {string} url
+ *              @var {string} shortLink
+ *              @var {string} idBoard
+ *         }
+ *         @var {object|undefined} attachment {
+ *              @var {string} id
+ *         }
+ * }
+ */
 async function getSyncParentData(t, attachments) {
 	if (attachments === undefined) {
 		attachments = await t.card('attachments').then(function(card) {
@@ -187,6 +221,18 @@ async function getSyncParentData(t, attachments) {
 	return newData;
 }
 
+/**
+ * get counts for childrenData when the checklist has changed
+ * 
+ * @param  {object} t           without context
+ * @param  {object} currentData {
+ *         @var {string} checklistId
+ * }
+ * @return {object} newCounts {
+ *         @var {int} total
+ *         @var {int} done
+ * }
+ */
 async function getChildrenCountData(t, currentData) {
 	const isAuthorized = await initializeAuthorization(t);
 	if (isAuthorized === false) {
@@ -209,6 +255,24 @@ async function getChildrenCountData(t, currentData) {
 	return newCounts;
 }
 
+/**
+ * get childrenData when the relations have changed
+ * 
+ * @param  {object}           t               context
+ * @param  {string}           parentShortLink
+ * @param  {object|undefined} currentData {
+ *         @var {string} checklistId
+ * }
+ * @return {object}           newData {
+ *         @var {string}   checklistId
+ *         @var {string[]} shortLinks
+ *         @var {object}   checkItemIds map of shortLinks to checkItemIds
+ *         @var {object}   counts {
+ *              @var {int} total
+ *              @var {int} done
+ *         }
+ * }
+ */
 async function getSyncChildrenData(t, parentShortLink, currentData) {
 	const isAuthorized = await initializeAuthorization(t);
 	if (isAuthorized === false) {
@@ -245,6 +309,26 @@ async function getSyncChildrenData(t, parentShortLink, currentData) {
 	}
 }
 
+/**
+ * @param  {object}           t               without context
+ * @param  {string}           checklistId
+ * @param  {object[]}         checkItems {
+ *         @var {string} id
+ *         @var {string} name
+ *         @var {string} state 'incomplete' or 'complete'
+ * }
+ * @param  {string}           parentShortLink
+ * @param  {object|undefined} currentData
+ * @return {object}           newData {
+ *         @var {string}   checklistId
+ *         @var {string[]} shortLinks
+ *         @var {object}   checkItemIds map of shortLinks to checkItemIds
+ *         @var {object}   counts {
+ *              @var {int} total
+ *              @var {int} done
+ *         }
+ * }
+ */
 async function collectChildrenDataToSync(t, checklistId, checkItems, parentShortLink, currentData) {
 	let newData = {
 		checklistId:  checklistId,
@@ -291,17 +375,16 @@ async function collectChildrenDataToSync(t, checklistId, checkItems, parentShort
 }
 
 /**
- * @param  {object}   t             context
- * @param  {object}   options       from context, containing optional search keyword
- * @param  {string}   parentOrChild one of 'parent' or 'child'
- * @param  {Function} callback      to execute when choosing a certain card
- * @return {array}                  cards with {
+ * @param  {object}           t             context
+ * @param  {string|undefined} searchTerm
+ * @param  {string}           parentOrChild one of 'parent' or 'child'
+ * @param  {Function}         callback      to execute when choosing a certain card
+ * @return {array}            cards with {
  *         @var {string}   text
  *         @var {Function} callback
  * }
  */
-async function searchCards(t, options, parentOrChild, callback) {
-	const searchTerm = options.search;
+async function searchCards(t, searchTerm, parentOrChild, callback) {
 	const pluginData = await t.get('card', 'shared');
 	
 	// collect current parent & children
@@ -339,7 +422,7 @@ async function searchCards(t, options, parentOrChild, callback) {
 			return [
 				{
 					text: matchingCard.name,
-					callback: function(t, options) {
+					callback: function(t) {
 						callback(t, matchingCard);
 					},
 				},
@@ -382,7 +465,7 @@ async function searchCards(t, options, parentOrChild, callback) {
 			cards = cards.map(function(card) {
 				return {
 					text: card.name,
-					callback: function(t, options) {
+					callback: function(t) {
 						callback(t, card);
 					},
 				};
@@ -393,7 +476,7 @@ async function searchCards(t, options, parentOrChild, callback) {
 				if (parentOrChild === 'parent' && pluginData.parent !== undefined) {
 					cards.push({
 						text:     '× Remove current EPIC',
-						callback: function(t, options) {
+						callback: function(t) {
 							removeParent(t, pluginData.parent);
 							t.closePopup();
 						},
@@ -403,7 +486,7 @@ async function searchCards(t, options, parentOrChild, callback) {
 				if (parentOrChild === 'child' && pluginData.children !== undefined) {
 					cards.push({
 						text:     '× Remove all tasks (remove the EPIC from the task card to remove a single task)',
-						callback: function(t, options) {
+						callback: function(t) {
 							removeChildren(t, pluginData.children);
 							t.closePopup();
 						},
@@ -416,6 +499,18 @@ async function searchCards(t, options, parentOrChild, callback) {
 	}
 }
 
+/**
+ * add parent relation to current (child) card
+ * 
+ * @param {object} t          context
+ * @param {object} parentCard {
+ *        @var {string}           id
+ *        @var {string}           name
+ *        @var {string}           url
+ *        @var {string}           shortLink
+ *        @var {string|undefined} idBoard
+ * }
+ */
 async function addParent(t, parentCard) {
 	await t.set('card', 'shared', 'updating', true);
 	
@@ -460,6 +555,17 @@ async function addParent(t, parentCard) {
 	}, 100);
 }
 
+/**
+ * add child relation to current (parent) card
+ * 
+ * @param {object} t         context
+ * @param {object} childCard {
+ *        @var {string}           id
+ *        @var {string}           url
+ *        @var {string}           shortLink
+ *        @var {string|undefined} idBoard
+ * }
+ */
 async function addChild(t, childCard) {
 	await t.set('card', 'shared', 'updating', true);
 	
@@ -506,6 +612,15 @@ async function addChild(t, childCard) {
 	}, 100);
 }
 
+/**
+ * remove parent relation from current (child) card
+ * 
+ * @param  {object} t          context
+ * @param  {object} parentData {
+ *         @var {string} shortLink
+ *         @var {string} attachmentId
+ * }
+ */
 async function removeParent(t, parentData) {
 	// remove parent from child
 	const childCardId = t.getContext().card;
@@ -529,6 +644,15 @@ async function removeParent(t, parentData) {
 	}
 }
 
+/**
+ * add all(!) children relations from current (parent) card
+ * 
+ * @param  {object} t            context
+ * @param  {object} childrenData {
+ *         @var {string}   checklistId
+ *         @var {string[]} shortLinks
+ * }
+ */
 async function removeChildren(t, childrenData) {
 	// remove children from parent
 	const parentCardId = t.getContext().card;
@@ -552,6 +676,19 @@ async function removeChildren(t, childrenData) {
 	}
 }
 
+/**
+ * store parent metadata
+ * 
+ * @param  {object} t             without context
+ * @param  {object} parentCard {
+ *         @var {string} shortLink
+ *         @var {string} name
+ * }
+ * @param  {object} attachment {
+ *         @var {string} id
+ * }
+ * @param  {string} contextCardId optional, defaults to context of the current card
+ */
 function storeParent(t, parentCard, attachment, contextCardId='card') {
 	t.set(contextCardId, 'shared', 'parent', {
 		attachmentId: attachment.id,
@@ -560,6 +697,19 @@ function storeParent(t, parentCard, attachment, contextCardId='card') {
 	});
 }
 
+/**
+ * store child metadata of a new child
+ * 
+ * @param  {object} t             without context
+ * @param  {string} checklistId
+ * @param  {objdct} childCard {
+ *         @var {string} shortLink
+ * }
+ * @param  {objdct} checkItem {
+ *         @var {string} id
+ * }
+ * @param  {string} contextCardId optional, defaults to context of the current card
+ */
 function storeChild(t, checklistId, childCard, checkItem, contextCardId='card') {
 	const defaultChildrenData = {
 		checklistId:  checklistId,
@@ -577,44 +727,93 @@ function storeChild(t, checklistId, childCard, checkItem, contextCardId='card') 
 	});
 }
 
+/**
+ * store children metadata of all children
+ * 
+ * @param  {object} t             without context
+ * @param  {object} childrenData {
+ *         @var {string}   checklistId
+ *         @var {string[]} shortLinks
+ *         @var {object}   checkItemIds map of shortLinks to checkItemIds
+ *         @var {object}   counts {
+ *              @var {int} total
+ *              @var {int} done
+ *         }
+ * }
+ * @param  {string} contextCardId optional, defaults to context of the current card
+ */
 function storeChildren(t, childrenData, contextCardId='card') {
 	t.set(contextCardId, 'shared', 'children', childrenData);
 }
 
+/**
+ * store children metadata for a cross-board relationship
+ * 
+ * @param  {object} t            without context
+ * @param  {string} parentCardId
+ */
 function queueSyncingChildren(t, parentCardId) {
 	t.set('organization', 'shared', 'sync-children-' + parentCardId, true);
 }
 
+/**
+ * store parent metadata for a cross-board relationship
+ * 
+ * @param  {object} t           without context
+ * @param  {string} childCardId
+ */
 function queueSyncingParent(t, childCardId) {
 	t.set('organization', 'shared', 'sync-parent-' + childCardId, true);
 }
 
+/**
+ * clear stored parent metadata
+ * 
+ * @param  {object} t             without context
+ * @param  {string} contextCardId optional, defaults to context of the current card
+ */
 function clearStoredParent(t, contextCardId='card') {
 	t.remove(contextCardId, 'shared', 'parent');
 }
 
+/**
+ * clear stored child metadata
+ * 
+ * @param  {object} t               without context
+ * @param  {string} parentShortLink
+ * @param  {object} currentData {
+ *         @var {string} checklistId
+ * }
+ */
 function clearStoredChild(t, parentShortLink, currentData) {
 	// nothing specific to that child, just sync the current state assuming the checkitem was removed before
 	getSyncChildrenData(t, parentShortLink, currentData).then(function(newData) {
 		storeChildren(t, newData, parentShortLink);
-	})
+	});
 }
 
+/**
+ * clear stored children metadata
+ * 
+ * @param  {object} t context
+ */
 function clearStoredChildren(t) {
 	t.remove('card', 'shared', 'children');
 }
 
 /**
- * add parent
+ * add attachment to store parent on a card
  * attach via Rest API instead of t.attach() to get attachment id
  * 
- * @param {object} t without context
+ * @param {object} t                      without context
  * @param {object} parentCard {
  *        @var {string} name
  *        @var {string} url
  * }
  * @param {string} childCardIdOrShortLink
- * @return {Promise}
+ * @return {Promise} => {object} attachment {
+ *         @var {string} id
+ * }
  */
 function createAttachment(t, parentCard, childCardIdOrShortLink) {
 	const postData = {
@@ -640,9 +839,11 @@ function createAttachment(t, parentCard, childCardIdOrShortLink) {
 /**
  * add checklist to host children on a card
  * 
- * @param {object} t without context
+ * @param {object} t                       without context
  * @param {object} parentCardIdOrShortLink
- * @return {Promise}
+ * @return {Promise} => {object} checklist {
+ *         @var {string} id
+ * }
  */
 function createChecklist(t, parentCardIdOrShortLink) {
 	const postData = {
@@ -666,12 +867,14 @@ function createChecklist(t, parentCardIdOrShortLink) {
 }
 
 /**
- * @param {object} t without context
+ * @param {object} t           without context
  * @param {object} childCard {
  *        @var {string} url
  * }
  * @param {string} checklistId
- * @return {Promise}
+ * @return {Promise} => {object} checkItem {
+ *         @var {string} id
+ * }
  */
 function createCheckItem(t, childCard, checklistId) {
 	const postData = {
@@ -695,7 +898,7 @@ function createCheckItem(t, childCard, checklistId) {
 }
 
 /**
- * @param  {object} t without context
+ * @param  {object} t                 without context
  * @param  {string} cardIdOrShortLink
  * @param  {string} attachmentId
  * @return {Promise}
@@ -717,7 +920,7 @@ function deleteAttachment(t, cardIdOrShortLink, attachmentId) {
 }
 
 /**
- * @param  {object} t without context
+ * @param  {object} t                 without context
  * @param  {object} cardIdOrShortLink
  * @param  {string} checklistId
  * @return {Promise}
@@ -739,7 +942,7 @@ function deleteChecklist(t, cardIdOrShortLink, checklistId) {
 }
 
 /**
- * @param  {object} t without context
+ * @param  {object} t           without context
  * @param  {string} checklistId
  * @param  {string} checkItemId
  * @return {Promise}
@@ -760,6 +963,18 @@ function deleteCheckItem(t, checklistId, checkItemId) {
 	}
 }
 
+/**
+ * show badge on a parent card to give information about the children
+ * 
+ * @param  {object} t         context
+ * @param  {string} badgeType front ('card-badges') or back ('card-detail-badges') of the card
+ * @return {object} {
+ *         @var {string} icon  optional, only for front badges
+ *         @var {string} title optional, only for back badges
+ *         @var {string} text
+ *         @var {string} color
+ * }
+ */
 function showBadgeOnParent(t, badgeType) {
 	return t.get('card', 'shared').then(async function(pluginData) {
 		const childrenData = pluginData.children;
@@ -820,6 +1035,22 @@ function showBadgeOnParent(t, badgeType) {
 	});
 }
 
+/**
+ * show badge on a child card to give information about the parent
+ * 
+ * @param  {object}             t         context
+ * @param  {string}             badgeType front ('card-badges') or back ('card-detail-badges') of the card
+ * @param  {object[]|undefined} attachments passed for front badges
+ *         @var {string} id
+ * }
+ * @return {object} {
+ *         @var {string}   icon     optional, only for front badges
+ *         @var {string}   title    optional, only for back badges
+ *         @var {string}   text
+ *         @var {string}   color    optional, only for front badges
+ *         @var {Function} callback optional, only for back badges
+ * }
+ */
 function showBadgeOnChild(t, badgeType, attachments) {
 	// process cross-board queue
 	if (badgeType === 'card-detail-badges') {
@@ -863,7 +1094,7 @@ function showBadgeOnChild(t, badgeType, attachments) {
 				return {
 					title: 'Part of EPIC',
 					text:  parentData.name,
-					callback: function(t, options) {
+					callback: function(t) {
 						t.showCard(parentData.shortLink);
 					},
 				};
@@ -873,7 +1104,7 @@ function showBadgeOnChild(t, badgeType, attachments) {
 
 /**
  * @param  {object} t context
- * @return {object}
+ * @return {Promise}
  */
 function showParentForm(t) {
 	return t.popup({
@@ -885,7 +1116,7 @@ function showParentForm(t) {
 			debounce: 300,
 		},
 		items: function(t, options) {
-			return searchCards(t, options, 'parent', function(t, card) {
+			return searchCards(t, options.search, 'parent', function(t, card) {
 				addParent(t, card);
 				t.closePopup();
 			});
@@ -895,7 +1126,7 @@ function showParentForm(t) {
 
 /**
  * @param  {object} t context
- * @return {object}
+ * @return {Promise}
  */
 function showChildrenForm(t) {
 	return t.popup({
@@ -907,7 +1138,7 @@ function showChildrenForm(t) {
 			debounce: 300,
 		},
 		items: function(t, options) {
-			return searchCards(t, options, 'child', function(t, card) {
+			return searchCards(t, options.search, 'child', function(t, card) {
 				addChild(t, card);
 				t.closePopup();
 			});
@@ -917,12 +1148,12 @@ function showChildrenForm(t) {
 
 /**
  * @param  {object} t context
- * @return {object}
+ * @return {Promise}
  */
 function showDebug(t) {
 	return t.popup({
 		title: 'Debug EPIC relation',
-		items: async function(t, options) {
+		items: async function(t) {
 			let items = [];
 			
 			const dateLastActivity = await t.card('dateLastActivity').then(function(card) {
@@ -985,7 +1216,7 @@ function initializeAuthorization(t) {
 
 /**
  * @param  {object} t context
- * @return {object}
+ * @return {Promise}
  */
 function startAuthorization(t) {
 	return t.popup({
@@ -999,7 +1230,7 @@ function startAuthorization(t) {
 }
 
 TrelloPowerUp.initialize({
-	'card-buttons': function(t, options) {
+	'card-buttons': function(t) {
 		return initializeAuthorization(t).then(function(isAuthorized) {
 			if (isAuthorized === false) {
 				return [];
@@ -1055,7 +1286,7 @@ TrelloPowerUp.initialize({
 			},
 		];
 	},
-	'authorization-status': function(t, options) {
+	'authorization-status': function(t) {
 		return t.get('member', 'private', 'token').then(function(token) {
 			const isAuthorized = (token !== undefined);
 			
@@ -1064,7 +1295,7 @@ TrelloPowerUp.initialize({
 			};
 		});
 	},
-	'show-authorization': function(t, options) {
+	'show-authorization': function(t) {
 		return startAuthorization(t);
 	},
 }, {
