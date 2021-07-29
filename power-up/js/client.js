@@ -419,7 +419,7 @@ async function addParent(t, parentCard) {
 	const childCard = await t.card('url', 'shortLink');
 	const checkItem = await createCheckItem(t, childCard, checklistId);
 	
-	if (parentCard.idBoard !== undefined) {
+	if (parentCard.idBoard !== undefined && parentCard.idBoard !== t.getContext().board) {
 		// use organization-level plugindata to store parent data for cross-board relations
 		queueSyncingChildren(t, parentCard.id);
 	}
@@ -456,7 +456,7 @@ async function addChild(t, childCard) {
 	const parentCard = await t.card('name', 'url', 'shortLink');
 	const attachment = await createAttachment(t, parentCard, childCard.id);
 	
-	if (childCard.idBoard !== undefined) {
+	if (childCard.idBoard !== undefined && childCard.idBoard !== t.getContext().board) {
 		// use organization-level plugindata to store parent data for cross-board relations
 		queueSyncingParent(t, childCard.id);
 	}
