@@ -242,12 +242,14 @@ async function collectChildrenDataToSync(t, checklistId, checkItems, parentShort
 		
 		parentOfChild = await getPluginData(t, childShortLink, 'parent');
 		if (parentOfChild === undefined) {
-			// @todo needs different behavior if checklist was certain
 			continue;
 		}
 		if (parentOfChild.shortLink !== parentShortLink) {
-			// @todo needs different behavior if checklist was certain
-			console.warn('child checkitem points to different parent');
+			if (currentData !== undefined) {
+				t.alert({
+					message: 'Task "' + checkItem.name + '" on the tasks checklist relates to a different parent.',
+				});
+			}
 			continue;
 		}
 		
