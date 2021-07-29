@@ -187,6 +187,28 @@ async function getSyncParentData(t, attachments) {
 	return newData;
 }
 
+async function getChildrenCountData(t, currentData) {
+	const isAuthorized = await initializeAuthorization(t);
+	if (isAuthorized === false) {
+		throw new Error('not authorized to sync');
+	}
+	
+	const checkItems = await getCheckItems(t, currentData.checklistId);
+	let newCounts = {
+		total: 0,
+		done:  0,
+	};
+	
+	for (let checkItem of checkItems) {
+		newCounts.total += 1;
+		if (checkItem.state === 'complete') {
+			newCounts.done += 1;
+		}
+	}
+	
+	return newCounts;
+}
+
 async function getSyncChildrenData(t, parentShortLink, currentData) {
 	const isAuthorized = await initializeAuthorization(t);
 	if (isAuthorized === false) {
@@ -739,7 +761,9 @@ function deleteCheckItem(t, checklistId, checkItemId) {
 }
 
 function showBadgeOnParent(t, badgeType) {
-	return t.get('card', 'shared', 'children').then(async function(childrenData) {
+	return t.get('card', 'shared').then(async function(pluginData) {
+		const childrenData = pluginData.children;
+		
 		// process cross-board queue
 		if (badgeType === 'card-detail-badges') {
 			t.get('organization', 'shared', 'sync-children-' + t.getContext().card, false).then(async function(shouldSyncChildren) {
@@ -760,6 +784,16 @@ function showBadgeOnParent(t, badgeType) {
 					});
 				});
 			});
+			
+			// process completing child checkitems
+			if (childrenData !== undefined && pluginData.updating === undefined) {
+				getChildrenCountData(t, childrenData).then(function(newCounts) {
+					if (JSON.stringify(newCounts) !== JSON.stringify(childrenData.counts)) {
+						childrenData.counts = newCounts;
+						storeChildren(t, childrenData);
+					}
+				});
+			}
 		}
 		
 		if (childrenData === undefined) {
