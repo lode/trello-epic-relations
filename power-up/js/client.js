@@ -406,10 +406,12 @@ async function searchCards(t, options, parentOrChild, callback) {
 async function addParent(t, parentCard) {
 	await t.set('card', 'shared', 'updating', true);
 	
+	// add parent to child
 	const childCardId = t.getContext().card;
 	const attachment  = await createAttachment(t, parentCard, childCardId);
 	storeParent(t, parentCard, attachment);
 	
+	// add child to parent
 	const checklistId = await getPluginData(t, parentCard.shortLink, 'children').then(async function(childrenData) {
 		if (childrenData !== undefined) {
 			return childrenData.checklistId;
@@ -424,12 +426,15 @@ async function addParent(t, parentCard) {
 	const checkItem = await createCheckItem(t, childCard, checklistId);
 	
 	if (parentCard.idBoard !== undefined) {
+		// use organization-level plugindata to store parent data for cross-board relations
 		queueSyncingChildren(t, parentCard.id);
 	}
 	else {
 		storeChild(t, checklistId, childCard, checkItem, parentCard.id);
 	}
 	
+	// give some time before releasing as updating
+	// this seems needed as card updates from trello api can still come in
 	setTimeout(function() {
 		t.remove('card', 'shared', 'updating');
 	}, 100);
@@ -438,6 +443,7 @@ async function addParent(t, parentCard) {
 async function addChild(t, childCard) {
 	await t.set('card', 'shared', 'updating', true);
 	
+	// add child to parent
 	const checklistId = await t.get('card', 'shared', 'children').then(async function(childrenData) {
 		if (childrenData !== undefined) {
 			return childrenData.checklistId;
@@ -452,16 +458,20 @@ async function addChild(t, childCard) {
 	const checkItem = await createCheckItem(t, childCard, checklistId);
 	await storeChild(t, checklistId, childCard, checkItem);
 	
+	// add parent to child
 	const parentCard = await t.card('name', 'url', 'shortLink');
 	const attachment = await createAttachment(t, parentCard, childCard.id);
 	
 	if (childCard.idBoard !== undefined) {
+		// use organization-level plugindata to store parent data for cross-board relations
 		queueSyncingParent(t, childCard.id);
 	}
 	else {
 		storeParent(t, parentCard, attachment, childCard.id);
 	}
 	
+	// give some time before releasing as updating
+	// this seems needed as card updates from trello api can still come in
 	setTimeout(function() {
 		t.remove('card', 'shared', 'updating');
 	}, 100);
