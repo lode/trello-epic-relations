@@ -183,55 +183,53 @@ async function getSyncParentData(t, attachments) {
 	throw new Error('no attachment to sync relates back to us');
 }
 
-async function getSyncChildrenData(t, currentData) {
+async function getSyncChildrenData(t, parentShortLink, currentData) {
 	const isAuthorized = await initializeAuthorization(t);
 	if (isAuthorized === false) {
 		throw new Error('not authorized to sync');
 	}
 	
-	// @todo move down after fetching checklists?
-	const parentShortLink = await t.card('shortLink').then(function(card) {
-		return card.shortLink;
-	});
-	
 	if (currentData !== undefined) {
 		const checkItems = await getCheckItems(t, currentData.checklistId);
-		const newData    = await collectChildrenDataToSync(t, checkItems, parentShortLink, currentData);
-		if (newData === undefined || JSON.stringify(newData) === JSON.stringify(currentData)) {
+		const newData    = await collectChildrenDataToSync(t, currentData.checklistId, checkItems, parentShortLink, currentData);
+		if (JSON.stringify(newData) === JSON.stringify(currentData)) {
 			throw new Error('nothing changed to sync');
 		}
 		
 		return newData;
 	}
 	else {
-		const parentCardId = t.getContext().card;
-		const checklists   = await getChecklists(t, parentCardId);
+		const checklists = await getChecklists(t, parentShortLink);
 		if (checklists.length === 0) {
 			throw new Error('empty checklist to sync');
 		}
 		
 		let newData;
 		for (let checklist of checklists) {
-			newData = await collectChildrenDataToSync(t, checklist.checkItems, parentShortLink, currentData);
-			if (newData === undefined) {
+			newData = await collectChildrenDataToSync(t, checklist.id, checklist.checkItems, parentShortLink, currentData);
+			if (newData.shortLinks.length === 0) {
 				continue;
 			}
 			
 			return newData;
 		}
+		
+		// default to any checklist found without items
+		return newData;
 	}
-	
-	throw new Error('no checklists to sync relates back to us');
 }
 
-async function collectChildrenDataToSync(t, checkItems, parentShortLink, currentData) {
-	if (checkItems.length === 0 && currentData === undefined) {
-		return;
-	}
+async function collectChildrenDataToSync(t, checklistId, checkItems, parentShortLink, currentData) {
+	let newData = {
+		checklistId:  checklistId,
+		shortLinks:   [],
+		checkItemIds: {},
+		counts:       {total: 0, done: 0},
+	};
 	
-	let shortLinks   = [];
-	let checkItemIds = {};
-	let counts       = {total: 0, done:  0};
+	if (checkItems.length === 0 && currentData === undefined) {
+		return newData;
+	}
 	
 	let childShortLink;
 	let parentOfChild;
@@ -249,23 +247,19 @@ async function collectChildrenDataToSync(t, checkItems, parentShortLink, current
 		}
 		if (parentOfChild.shortLink !== parentShortLink) {
 			// @todo needs different behavior if checklist was certain
-			return;
+			console.warn('child checkitem points to different parent');
+			continue;
 		}
 		
-		shortLinks.push(childShortLink);
-		checkItemIds[childShortLink] = checkItem.id;
-		counts.total += 1;
+		newData.shortLinks.push(childShortLink);
+		newData.checkItemIds[childShortLink] = checkItem.id;
+		newData.counts.total += 1;
 		if (checkItem.state === 'complete') {
-			counts.done += 1;
+			newData.counts.done += 1;
 		}
 	}
 	
-	return {
-		checklistId:  checkItems[0].idChecklist,
-		shortLinks:   shortLinks,
-		checkItemIds: checkItemIds,
-		counts:       counts,
-	}
+	return newData;
 }
 
 /**
@@ -607,13 +601,15 @@ function showBadgeOnParent(t, badgeType) {
 	return t.get('card', 'shared', 'children').then(async function(childrenData) {
 		// process cross-board queue
 		if (badgeType === 'card-detail-badges') {
-			t.get('organization', 'shared', 'sync-children-' + t.getContext().card, false).then(function(shouldSyncChildren) {
+			t.get('organization', 'shared', 'sync-children-' + t.getContext().card, false).then(async function(shouldSyncChildren) {
 				if (shouldSyncChildren === false) {
 					return;
 				}
 				
 				t.remove('organization', 'shared', 'sync-children-' + t.getContext().card);
-				getSyncChildrenData(t, childrenData).then(function(newData) {
+				
+				const parentCard = await t.card('shortLink');
+				getSyncChildrenData(t, parentCard.shortLink, childrenData).then(function(newData) {
 					storeChildren(t, newData);
 				})
 				.catch(function(error) {
