@@ -280,20 +280,11 @@ async function collectChildrenDataToSync(t, checkItems, parentShortLink, current
  */
 async function searchCards(t, options, parentOrChild, callback) {
 	const searchTerm = options.search;
+	const pluginData = await t.get('card', 'shared');
 	
-	// collect current parent
-	let parentCardShortLink = await t.get('card', 'shared', 'parent').then(function(parent) {
-		if (parent !== undefined) {
-			return parent.shortLink;
-		}
-	});
-	
-	// get current children
-	const childCardShortLinks = await t.get('card', 'shared', 'children').then(function(children) {
-		if (children !== undefined) {
-			return children.shortLinks;
-		}
-	});
+	// collect current parent & children
+	const parentCardShortLink = (pluginData.parent   !== undefined ? pluginData.parent.shortLink    : '');
+	const childCardShortLinks = (pluginData.children !== undefined ? pluginData.children.shortLinks : []);
 	
 	// offer to add by card link
 	if (searchTerm !== '' && searchTerm.indexOf('https://trello.com/c/') === 0) {
@@ -301,10 +292,10 @@ async function searchCards(t, options, parentOrChild, callback) {
 			const searchShortLink = getCardShortLinkFromUrl(searchTerm);
 			
 			// skip already added cards
-			if (parentCardShortLink !== undefined && parentCardShortLink === searchShortLink) {
+			if (parentCardShortLink === searchShortLink) {
 				return [];
 			}
-			if (childCardShortLinks !== undefined && childCardShortLinks.includes(searchShortLink)) {
+			if (childCardShortLinks.includes(searchShortLink)) {
 				return [];
 			}
 			
@@ -340,10 +331,10 @@ async function searchCards(t, options, parentOrChild, callback) {
 				if (t.getContext().card === card.id) {
 					return false;
 				}
-				if (parentCardShortLink !== undefined && parentCardShortLink === card.shortLink) {
+				if (parentCardShortLink === card.shortLink) {
 					return false;
 				}
-				if (childCardShortLinks !== undefined && childCardShortLinks.includes(card.shortLink)) {
+				if (childCardShortLinks.includes(card.shortLink)) {
 					return false;
 				}
 				
