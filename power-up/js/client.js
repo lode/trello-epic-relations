@@ -141,8 +141,13 @@ async function getSyncParentData(t, attachments) {
 		});
 	}
 	
+	let newData = {
+		parentCard: undefined,
+		attachment: undefined,
+	};
+	
 	if (attachments.length === 0) {
-		throw new Error('no attachments found to sync');
+		return newData;
 	}
 	
 	const isAuthorized = await initializeAuthorization(t);
@@ -174,13 +179,12 @@ async function getSyncParentData(t, attachments) {
 		
 		parentCard = await getCardByIdOrShortLink(t, parentShortLink);
 		
-		return {
-			parentCard: parentCard,
-			attachment: attachment,
-		};
+		newData.parentCard = parentCard;
+		newData.attachment = attachment;
+		break;
 	}
 	
-	throw new Error('no attachment to sync relates back to us');
+	return newData;
 }
 
 async function getSyncChildrenData(t, parentShortLink, currentData) {
@@ -201,7 +205,7 @@ async function getSyncChildrenData(t, parentShortLink, currentData) {
 	else {
 		const checklists = await getChecklists(t, parentShortLink);
 		if (checklists.length === 0) {
-			throw new Error('empty checklist to sync');
+			throw new Error('no checklists to sync');
 		}
 		
 		let newData;
@@ -782,7 +786,12 @@ function showBadgeOnChild(t, badgeType, attachments) {
 			
 			t.remove('organization', 'shared', 'sync-parent-' + t.getContext().card);
 			getSyncParentData(t, attachments).then(function(syncData) {
-				storeParent(t, syncData.parentCard, syncData.attachment);
+				if (syncData.parentCard === undefined) {
+					clearStoredParent(t);
+				}
+				else {
+					storeParent(t, syncData.parentCard, syncData.attachment);
+				}
 			})
 			.catch(function(error) {
 				console.warn('Error processing queue to sync parent', error);
