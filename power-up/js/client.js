@@ -645,7 +645,7 @@ async function removeParent(t, parentData) {
 }
 
 /**
- * add all(!) children relations from current (parent) card
+ * remove all(!) children relations from current (parent) card
  * 
  * @param  {object} t            context
  * @param  {object} childrenData {
