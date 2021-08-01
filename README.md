@@ -9,6 +9,7 @@ This power-up for Trello allows to quickly connect project cards (epics) to task
 It works with native checklists and card attachments, so your data is yours even when you don't use the plugin.
 
 Currently, you can't manually add/remove tasks in a checklist of an epic card or remove an epic card attachment of a task card.
+Instead, use the card buttons to manage relationshis.
 
 
 ## Install
@@ -55,8 +56,8 @@ To **remove a relation**, open _the task card_, click the 'epic' card button on 
 Note, every add/remove action is automatically synced to the related card.
 This works across boards within the same organization as well. Even if those boards don't have the plugin installed.
 
-Be aware that **you can't (yet) manually change the checklist or card attachment**. Always use the card buttons to do so.
-You can sort card attachments or checklists, rename checklists, or update checkitems (marking (in)complete, attaching people and due dates).
+Be aware that **you can _not_ (yet) manually change the checklist or card attachment**. Always use the card buttons to do so.
+You _can_ sort card attachments or checklists, rename checklists, or update checkitems (marking (in)complete, attaching people and due dates).
 
 
 ## Contributing
