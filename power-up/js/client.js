@@ -7,6 +7,7 @@ const FAVICON      = CDN_BASE_URL + 'favicon.png';
 const ICON_UP      = CDN_BASE_URL + 'icon-up.png';
 const ICON_DOWN    = CDN_BASE_URL + 'icon-down.png';
 const LIST_MAXIMUM = 10;
+const SHOW_DEBUG   = false;
 
 /**
  * @param  {string}           cardUrl
@@ -1294,7 +1295,7 @@ TrelloPowerUp.initialize({
 				return [];
 			}
 			
-			return [
+			const cardButtons = [
 				{
 					text:      'EPIC',
 					icon:      ICON_UP,
@@ -1307,13 +1308,18 @@ TrelloPowerUp.initialize({
 					condition: 'edit',
 					callback:  showChildrenForm,
 				},
-				{
+			];
+			
+			if (SHOW_DEBUG) {
+				cardButtons.push({
 					text:      'Debug',
 					icon:      FAVICON,
 					condition: 'edit',
 					callback:  showDebug,
-				}
-			];
+				});
+			}
+			
+			return cardButtons;
 		});
 	},
 	'card-badges': function(t, options) {
