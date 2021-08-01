@@ -895,6 +895,11 @@ function clearStoredChildren(t) {
 	t.remove('card', 'shared', 'children');
 }
 
+/**
+ * clear all stored metadata
+ * 
+ * @param  {object} t context
+ */
 function clearStoredData(t) {
 	t.remove('card', 'shared', [
 		'children',
