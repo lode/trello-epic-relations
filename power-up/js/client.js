@@ -635,7 +635,7 @@ async function removeParent(t, parentData) {
 		queueSyncingChildren(t, parentCard.id);
 	}
 	else {
-		clearStoredChild(t, parentCard.shortLink, childrenOfParent);
+		clearStoredChild(t, parentCard.shortLink, parentCard.id, childrenOfParent);
 	}
 }
 
@@ -674,65 +674,85 @@ async function removeChildren(t, childrenData) {
 /**
  * process queue of actions delayed because the card was out of context
  * 
- * @param {object} t context
+ * @param  {object}  t          context
+ * @param  {string}  badgeType  front ('card-badges') or back ('card-detail-badges') of the card
+ * @param  {Promise} pluginData
  */
-function processQueue(t) {
-	// process cross-board queue to add parents to children
-	t.get('organization', 'shared', 'sync-parent-' + t.getContext().card, false).then(function(shouldSyncParent) {
-		if (shouldSyncParent === false) {
-			return;
-		}
-		
-		t.remove('organization', 'shared', 'sync-parent-' + t.getContext().card);
-		getSyncParentData(t).then(function(syncData) {
-			if (syncData.parentCard === undefined) {
-				clearStoredParent(t);
+function processQueue(t, badgeType, pluginData) {
+	if (badgeType === 'card-badges') {
+		pluginData.then(async function(pluginData) {
+			// cleanup data for copied cards
+			if (pluginData.copyDetection !== undefined && pluginData.copyDetection !== t.getContext().card) {
+				// we can only cleanup the plugindata, let the user delete the attachment/checklists
+				// the attachment/checklist ids got regenerated for the copied card, thus we can't (easily) delete them
+				// also, users might want to keep them
+				clearStoredData(t);
+				t.alert({
+					message:  'Relationships on the copied card are disconnected. You can delete the attachment/checklist, and optionally re-create the prefered relations.',
+					duration: 10,
+				});
 			}
-			else {
-				storeParent(t, syncData.parentCard, syncData.attachment);
-			}
-		})
-		.catch(function(error) {
-			console.warn('Error processing queue to sync parent', error);
-			t.alert({
-				message: 'Something went wrong adding the EPIC, try creating the relationship again.',
-			});
 		});
-	});
+	}
 	
-	t.get('card', 'shared').then(async function(pluginData) {
-		const childrenData = pluginData.children;
-		
-		// process cross-board queue to add children to parents
-		t.get('organization', 'shared', 'sync-children-' + t.getContext().card, false).then(async function(shouldSyncChildren) {
-			if (shouldSyncChildren === false) {
+	if (badgeType === 'card-detail-badges') {
+		// process cross-board queue to add parents to children
+		t.get('organization', 'shared', 'sync-parent-' + t.getContext().card, false).then(function(shouldSyncParent) {
+			if (shouldSyncParent === false) {
 				return;
 			}
 			
-			t.remove('organization', 'shared', 'sync-children-' + t.getContext().card);
-			
-			const parentCard = await t.card('shortLink');
-			getSyncChildrenData(t, parentCard.shortLink, childrenData).then(function(newData) {
-				storeChildren(t, newData);
+			t.remove('organization', 'shared', 'sync-parent-' + t.getContext().card);
+			getSyncParentData(t).then(function(syncData) {
+				if (syncData.parentCard === undefined) {
+					clearStoredParent(t);
+				}
+				else {
+					storeParent(t, syncData.parentCard, syncData.attachment);
+				}
 			})
 			.catch(function(error) {
-				console.warn('Error processing queue to sync children', error);
+				console.warn('Error processing queue to sync parent', error);
 				t.alert({
-					message: 'Something went wrong adding the task, try creating the relationship again.',
+					message: 'Something went wrong adding the EPIC, try creating the relationship again.',
 				});
 			});
 		});
 		
-		// process marking child checkitems as complete
-		if (childrenData !== undefined && pluginData.updating === undefined) {
-			getChildrenCountData(t, childrenData).then(function(newCounts) {
-				if (JSON.stringify(newCounts) !== JSON.stringify(childrenData.counts)) {
-					childrenData.counts = newCounts;
-					storeChildren(t, childrenData);
+		pluginData.then(async function(pluginData) {
+			const childrenData = pluginData.children;
+			
+			// process cross-board queue to add children to parents
+			t.get('organization', 'shared', 'sync-children-' + t.getContext().card, false).then(async function(shouldSyncChildren) {
+				if (shouldSyncChildren === false) {
+					return;
 				}
+				
+				t.remove('organization', 'shared', 'sync-children-' + t.getContext().card);
+				
+				const parentCard = await t.card('shortLink');
+				getSyncChildrenData(t, parentCard.shortLink, childrenData).then(function(newData) {
+					storeChildren(t, newData);
+				})
+				.catch(function(error) {
+					console.warn('Error processing queue to sync children', error);
+					t.alert({
+						message: 'Something went wrong adding the task, try creating the relationship again.',
+					});
+				});
 			});
-		}
-	});
+			
+			// process marking child checkitems as complete
+			if (childrenData !== undefined && pluginData.updating === undefined) {
+				getChildrenCountData(t, childrenData).then(function(newCounts) {
+					if (JSON.stringify(newCounts) !== JSON.stringify(childrenData.counts)) {
+						childrenData.counts = newCounts;
+						storeChildren(t, childrenData);
+					}
+				});
+			}
+		});
+	}
 }
 
 /**
@@ -749,10 +769,15 @@ function processQueue(t) {
  * @param  {string} contextCardId optional, defaults to context of the current card
  */
 function storeParent(t, parentCard, attachment, contextCardId='card') {
-	t.set(contextCardId, 'shared', 'parent', {
-		attachmentId: attachment.id,
-		shortLink:    parentCard.shortLink,
-		name:         parentCard.name,
+	const cardId = (contextCardId !== 'card') ? contextCardId : t.getContext().card;
+	
+	t.set(contextCardId, 'shared', {
+		copyDetection: cardId,
+		parent:        {
+			attachmentId: attachment.id,
+			shortLink:    parentCard.shortLink,
+			name:         parentCard.name,
+		},
 	});
 }
 
@@ -770,6 +795,8 @@ function storeParent(t, parentCard, attachment, contextCardId='card') {
  * @param  {string} contextCardId optional, defaults to context of the current card
  */
 function storeChild(t, checklistId, childCard, checkItem, contextCardId='card') {
+	const cardId = (contextCardId !== 'card') ? contextCardId : t.getContext().card;
+	
 	const defaultChildrenData = {
 		checklistId:  checklistId,
 		shortLinks:   [],
@@ -782,7 +809,10 @@ function storeChild(t, checklistId, childCard, checkItem, contextCardId='card') 
 		childrenData.checkItemIds[childCard.shortLink] = checkItem.id;
 		childrenData.counts.total += 1;
 		
-		t.set(contextCardId, 'shared', 'children', childrenData);
+		t.set(contextCardId, 'shared', {
+			copyDetection: cardId,
+			children:      childrenData,
+		});
 	});
 }
 
@@ -802,7 +832,12 @@ function storeChild(t, checklistId, childCard, checkItem, contextCardId='card') 
  * @param  {string} contextCardId optional, defaults to context of the current card
  */
 function storeChildren(t, childrenData, contextCardId='card') {
-	t.set(contextCardId, 'shared', 'children', childrenData);
+	const cardId = (contextCardId !== 'card') ? contextCardId : t.getContext().card;
+	
+	t.set(contextCardId, 'shared', {
+		copyDetection: cardId,
+		children:      childrenData,
+	});
 }
 
 /**
@@ -844,10 +879,10 @@ function clearStoredParent(t, contextCardId='card') {
  *         @var {string} checklistId
  * }
  */
-function clearStoredChild(t, parentShortLink, currentData) {
+function clearStoredChild(t, parentShortLink, parentCardId, currentData) {
 	// nothing specific to that child, just sync the current state assuming the checkitem was removed before
 	getSyncChildrenData(t, parentShortLink, currentData).then(function(newData) {
-		storeChildren(t, newData, parentShortLink);
+		storeChildren(t, newData, parentCardId);
 	});
 }
 
@@ -858,6 +893,20 @@ function clearStoredChild(t, parentShortLink, currentData) {
  */
 function clearStoredChildren(t) {
 	t.remove('card', 'shared', 'children');
+}
+
+/**
+ * clear all stored metadata
+ * 
+ * @param  {object} t context
+ */
+function clearStoredData(t) {
+	t.remove('card', 'shared', [
+		'children',
+		'copyDetection',
+		'parent',
+		'updating',
+	]);
 }
 
 /**
@@ -1025,8 +1074,9 @@ function deleteCheckItem(t, checklistId, checkItemId) {
 /**
  * show badge on a parent card to give information about the children
  * 
- * @param  {object} t         context
- * @param  {string} badgeType front ('card-badges') or back ('card-detail-badges') of the card
+ * @param  {object}  t          context
+ * @param  {string}  badgeType  front ('card-badges') or back ('card-detail-badges') of the card
+ * @param  {Promise} pluginData
  * @return {object} {
  *         @var {string} icon  optional, only for front badges
  *         @var {string} title optional, only for back badges
@@ -1034,13 +1084,14 @@ function deleteCheckItem(t, checklistId, checkItemId) {
  *         @var {string} color
  * }
  */
-function showBadgeOnParent(t, badgeType) {
-	return t.get('card', 'shared', 'children').then(async function(childrenData) {
-		if (childrenData === undefined) {
+function showBadgeOnParent(t, badgeType, pluginData) {
+	return pluginData.then(async function(pluginData) {
+		if (pluginData.children === undefined) {
 		 	return {};
 		}
 		
-		const color = (childrenData.counts.done > 0 && childrenData.counts.done === childrenData.counts.total) ? 'green' : 'light-gray';
+		const childrenData = pluginData.children;
+		const color        = (childrenData.counts.done > 0 && childrenData.counts.done === childrenData.counts.total) ? 'green' : 'light-gray';
 		
 		switch (badgeType) {
 			case 'card-badges':
@@ -1063,8 +1114,9 @@ function showBadgeOnParent(t, badgeType) {
 /**
  * show badge on a child card to give information about the parent
  * 
- * @param  {object}             t         context
- * @param  {string}             badgeType front ('card-badges') or back ('card-detail-badges') of the card
+ * @param  {object}  t          context
+ * @param  {string}  badgeType  front ('card-badges') or back ('card-detail-badges') of the card
+ * @param  {Promise} pluginData
  * @return {object} {
  *         @var {string}   icon     optional, only for front badges
  *         @var {string}   title    optional, only for back badges
@@ -1073,11 +1125,13 @@ function showBadgeOnParent(t, badgeType) {
  *         @var {Function} callback optional, only for back badges
  * }
  */
-function showBadgeOnChild(t, badgeType) {
-	return t.get('card', 'shared', 'parent').then(async function(parentData) {
-		if (parentData === undefined) {
+function showBadgeOnChild(t, badgeType, pluginData) {
+	return pluginData.then(async function(pluginData) {
+		if (pluginData.parent === undefined) {
 			return {};
 		}
+		
+		const parentData = pluginData.parent;
 		
 		switch (badgeType) {
 			case 'card-badges':
@@ -1159,6 +1213,13 @@ function showDebug(t) {
 			items.push({text: 'last activity: ' + dateLastActivity});
 			
 			const pluginData = await t.get('card', 'shared');
+			
+			if (pluginData.copyDetection !== undefined) {
+				items.push({text: 'copy detection: ' + pluginData.copyDetection});
+			}
+			else {
+				items.push({text: 'copy detection: -'});
+			}
 			
 			if (pluginData.updating !== undefined) {
 				items.push({text: 'updating: yes'});
@@ -1256,34 +1317,43 @@ TrelloPowerUp.initialize({
 		});
 	},
 	'card-badges': function(t, options) {
+		const pluginData = t.get('card', 'shared');
+		
 		return [
 			{
 				dynamic: function() {
-					return showBadgeOnParent(t, options.context.command);
+					return showBadgeOnParent(t, options.context.command, pluginData);
 				},
 			},
 			{
 				dynamic: function() {
-					return showBadgeOnChild(t, options.context.command);
+					return showBadgeOnChild(t, options.context.command, pluginData);
+				},
+			},
+			{
+				dynamic: function() {
+					return processQueue(t, options.context.command, pluginData);
 				},
 			},
 		];
 	},
 	'card-detail-badges': function(t, options) {
+		const pluginData = t.get('card', 'shared');
+		
 		return [
 			{
 				dynamic: function() {
-					return showBadgeOnParent(t, options.context.command);
+					return showBadgeOnParent(t, options.context.command, pluginData);
 				},
 			},
 			{
 				dynamic: function() {
-					return showBadgeOnChild(t, options.context.command);
+					return showBadgeOnChild(t, options.context.command, pluginData);
 				},
 			},
 			{
 				dynamic: function() {
-					return processQueue(t);
+					return processQueue(t, options.context.command, pluginData);
 				},
 			},
 		];
