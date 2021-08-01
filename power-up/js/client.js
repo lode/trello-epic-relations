@@ -672,6 +672,70 @@ async function removeChildren(t, childrenData) {
 }
 
 /**
+ * process queue of actions delayed because the card was out of context
+ * 
+ * @param {object} t context
+ */
+function processQueue(t) {
+	// process cross-board queue to add parents to children
+	t.get('organization', 'shared', 'sync-parent-' + t.getContext().card, false).then(function(shouldSyncParent) {
+		if (shouldSyncParent === false) {
+			return;
+		}
+		
+		t.remove('organization', 'shared', 'sync-parent-' + t.getContext().card);
+		getSyncParentData(t).then(function(syncData) {
+			if (syncData.parentCard === undefined) {
+				clearStoredParent(t);
+			}
+			else {
+				storeParent(t, syncData.parentCard, syncData.attachment);
+			}
+		})
+		.catch(function(error) {
+			console.warn('Error processing queue to sync parent', error);
+			t.alert({
+				message: 'Something went wrong adding the EPIC, try creating the relationship again.',
+			});
+		});
+	});
+	
+	t.get('card', 'shared').then(async function(pluginData) {
+		const childrenData = pluginData.children;
+		
+		// process cross-board queue to add children to parents
+		t.get('organization', 'shared', 'sync-children-' + t.getContext().card, false).then(async function(shouldSyncChildren) {
+			if (shouldSyncChildren === false) {
+				return;
+			}
+			
+			t.remove('organization', 'shared', 'sync-children-' + t.getContext().card);
+			
+			const parentCard = await t.card('shortLink');
+			getSyncChildrenData(t, parentCard.shortLink, childrenData).then(function(newData) {
+				storeChildren(t, newData);
+			})
+			.catch(function(error) {
+				console.warn('Error processing queue to sync children', error);
+				t.alert({
+					message: 'Something went wrong adding the task, try creating the relationship again.',
+				});
+			});
+		});
+		
+		// process marking child checkitems as complete
+		if (childrenData !== undefined && pluginData.updating === undefined) {
+			getChildrenCountData(t, childrenData).then(function(newCounts) {
+				if (JSON.stringify(newCounts) !== JSON.stringify(childrenData.counts)) {
+					childrenData.counts = newCounts;
+					storeChildren(t, childrenData);
+				}
+			});
+		}
+	});
+}
+
+/**
  * store parent metadata
  * 
  * @param  {object} t             without context
@@ -971,41 +1035,7 @@ function deleteCheckItem(t, checklistId, checkItemId) {
  * }
  */
 function showBadgeOnParent(t, badgeType) {
-	return t.get('card', 'shared').then(async function(pluginData) {
-		const childrenData = pluginData.children;
-		
-		// process cross-board queue
-		if (badgeType === 'card-detail-badges') {
-			t.get('organization', 'shared', 'sync-children-' + t.getContext().card, false).then(async function(shouldSyncChildren) {
-				if (shouldSyncChildren === false) {
-					return;
-				}
-				
-				t.remove('organization', 'shared', 'sync-children-' + t.getContext().card);
-				
-				const parentCard = await t.card('shortLink');
-				getSyncChildrenData(t, parentCard.shortLink, childrenData).then(function(newData) {
-					storeChildren(t, newData);
-				})
-				.catch(function(error) {
-					console.warn('Error processing queue to sync children', error);
-					t.alert({
-						message: 'Something went wrong adding the task, try creating the relationship again.',
-					});
-				});
-			});
-			
-			// process completing child checkitems
-			if (childrenData !== undefined && pluginData.updating === undefined) {
-				getChildrenCountData(t, childrenData).then(function(newCounts) {
-					if (JSON.stringify(newCounts) !== JSON.stringify(childrenData.counts)) {
-						childrenData.counts = newCounts;
-						storeChildren(t, childrenData);
-					}
-				});
-			}
-		}
-		
+	return t.get('card', 'shared', 'children').then(async function(childrenData) {
 		if (childrenData === undefined) {
 		 	return {};
 		}
@@ -1044,31 +1074,6 @@ function showBadgeOnParent(t, badgeType) {
  * }
  */
 function showBadgeOnChild(t, badgeType) {
-	// process cross-board queue
-	if (badgeType === 'card-detail-badges') {
-		t.get('organization', 'shared', 'sync-parent-' + t.getContext().card, false).then(function(shouldSyncParent) {
-			if (shouldSyncParent === false) {
-				return;
-			}
-			
-			t.remove('organization', 'shared', 'sync-parent-' + t.getContext().card);
-			getSyncParentData(t).then(function(syncData) {
-				if (syncData.parentCard === undefined) {
-					clearStoredParent(t);
-				}
-				else {
-					storeParent(t, syncData.parentCard, syncData.attachment);
-				}
-			})
-			.catch(function(error) {
-				console.warn('Error processing queue to sync parent', error);
-				t.alert({
-					message: 'Something went wrong adding the EPIC, try creating the relationship again.',
-				});
-			});
-		});
-	}
-	
 	return t.get('card', 'shared', 'parent').then(async function(parentData) {
 		if (parentData === undefined) {
 			return {};
@@ -1274,6 +1279,11 @@ TrelloPowerUp.initialize({
 			{
 				dynamic: function() {
 					return showBadgeOnChild(t, options.context.command);
+				},
+			},
+			{
+				dynamic: function() {
+					return processQueue(t);
 				},
 			},
 		];
