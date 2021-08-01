@@ -635,7 +635,7 @@ async function removeParent(t, parentData) {
 		queueSyncingChildren(t, parentCard.id);
 	}
 	else {
-		clearStoredChild(t, parentCard.shortLink, childrenOfParent);
+		clearStoredChild(t, parentCard.shortLink, parentCard.id, childrenOfParent);
 	}
 }
 
@@ -753,10 +753,15 @@ function processQueue(t, badgeType, pluginData) {
  * @param  {string} contextCardId optional, defaults to context of the current card
  */
 function storeParent(t, parentCard, attachment, contextCardId='card') {
-	t.set(contextCardId, 'shared', 'parent', {
-		attachmentId: attachment.id,
-		shortLink:    parentCard.shortLink,
-		name:         parentCard.name,
+	const cardId = (contextCardId !== 'card') ? contextCardId : t.getContext().card;
+	
+	t.set(contextCardId, 'shared', {
+		copyDetection: cardId,
+		parent:        {
+			attachmentId: attachment.id,
+			shortLink:    parentCard.shortLink,
+			name:         parentCard.name,
+		},
 	});
 }
 
@@ -774,6 +779,8 @@ function storeParent(t, parentCard, attachment, contextCardId='card') {
  * @param  {string} contextCardId optional, defaults to context of the current card
  */
 function storeChild(t, checklistId, childCard, checkItem, contextCardId='card') {
+	const cardId = (contextCardId !== 'card') ? contextCardId : t.getContext().card;
+	
 	const defaultChildrenData = {
 		checklistId:  checklistId,
 		shortLinks:   [],
@@ -786,7 +793,10 @@ function storeChild(t, checklistId, childCard, checkItem, contextCardId='card') 
 		childrenData.checkItemIds[childCard.shortLink] = checkItem.id;
 		childrenData.counts.total += 1;
 		
-		t.set(contextCardId, 'shared', 'children', childrenData);
+		t.set(contextCardId, 'shared', {
+			copyDetection: cardId,
+			children:      childrenData,
+		});
 	});
 }
 
@@ -806,7 +816,12 @@ function storeChild(t, checklistId, childCard, checkItem, contextCardId='card') 
  * @param  {string} contextCardId optional, defaults to context of the current card
  */
 function storeChildren(t, childrenData, contextCardId='card') {
-	t.set(contextCardId, 'shared', 'children', childrenData);
+	const cardId = (contextCardId !== 'card') ? contextCardId : t.getContext().card;
+	
+	t.set(contextCardId, 'shared', {
+		copyDetection: cardId,
+		children:      childrenData,
+	});
 }
 
 /**
@@ -848,10 +863,10 @@ function clearStoredParent(t, contextCardId='card') {
  *         @var {string} checklistId
  * }
  */
-function clearStoredChild(t, parentShortLink, currentData) {
+function clearStoredChild(t, parentShortLink, parentCardId, currentData) {
 	// nothing specific to that child, just sync the current state assuming the checkitem was removed before
 	getSyncChildrenData(t, parentShortLink, currentData).then(function(newData) {
-		storeChildren(t, newData, parentShortLink);
+		storeChildren(t, newData, parentCardId);
 	});
 }
 
@@ -1168,6 +1183,13 @@ function showDebug(t) {
 			items.push({text: 'last activity: ' + dateLastActivity});
 			
 			const pluginData = await t.get('card', 'shared');
+			
+			if (pluginData.copyDetection !== undefined) {
+				items.push({text: 'copy detection: ' + pluginData.copyDetection});
+			}
+			else {
+				items.push({text: 'copy detection: -'});
+			}
 			
 			if (pluginData.updating !== undefined) {
 				items.push({text: 'updating: yes'});
