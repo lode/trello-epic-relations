@@ -674,9 +674,10 @@ async function removeChildren(t, childrenData) {
 /**
  * process queue of actions delayed because the card was out of context
  * 
- * @param {object} t context
+ * @param  {object}  t          context
+ * @param  {Promise} pluginData
  */
-function processQueue(t) {
+function processQueue(t, pluginData) {
 	// process cross-board queue to add parents to children
 	t.get('organization', 'shared', 'sync-parent-' + t.getContext().card, false).then(function(shouldSyncParent) {
 		if (shouldSyncParent === false) {
@@ -700,7 +701,7 @@ function processQueue(t) {
 		});
 	});
 	
-	t.get('card', 'shared').then(async function(pluginData) {
+	pluginData.then(async function(pluginData) {
 		const childrenData = pluginData.children;
 		
 		// process cross-board queue to add children to parents
@@ -1025,8 +1026,9 @@ function deleteCheckItem(t, checklistId, checkItemId) {
 /**
  * show badge on a parent card to give information about the children
  * 
- * @param  {object} t         context
- * @param  {string} badgeType front ('card-badges') or back ('card-detail-badges') of the card
+ * @param  {object}  t          context
+ * @param  {string}  badgeType  front ('card-badges') or back ('card-detail-badges') of the card
+ * @param  {Promise} pluginData
  * @return {object} {
  *         @var {string} icon  optional, only for front badges
  *         @var {string} title optional, only for back badges
@@ -1034,13 +1036,14 @@ function deleteCheckItem(t, checklistId, checkItemId) {
  *         @var {string} color
  * }
  */
-function showBadgeOnParent(t, badgeType) {
-	return t.get('card', 'shared', 'children').then(async function(childrenData) {
-		if (childrenData === undefined) {
+function showBadgeOnParent(t, badgeType, pluginData) {
+	return pluginData.then(async function(pluginData) {
+		if (pluginData.children === undefined) {
 		 	return {};
 		}
 		
-		const color = (childrenData.counts.done > 0 && childrenData.counts.done === childrenData.counts.total) ? 'green' : 'light-gray';
+		const childrenData = pluginData.children;
+		const color        = (childrenData.counts.done > 0 && childrenData.counts.done === childrenData.counts.total) ? 'green' : 'light-gray';
 		
 		switch (badgeType) {
 			case 'card-badges':
@@ -1063,8 +1066,9 @@ function showBadgeOnParent(t, badgeType) {
 /**
  * show badge on a child card to give information about the parent
  * 
- * @param  {object}             t         context
- * @param  {string}             badgeType front ('card-badges') or back ('card-detail-badges') of the card
+ * @param  {object}  t          context
+ * @param  {string}  badgeType  front ('card-badges') or back ('card-detail-badges') of the card
+ * @param  {Promise} pluginData
  * @return {object} {
  *         @var {string}   icon     optional, only for front badges
  *         @var {string}   title    optional, only for back badges
@@ -1073,11 +1077,13 @@ function showBadgeOnParent(t, badgeType) {
  *         @var {Function} callback optional, only for back badges
  * }
  */
-function showBadgeOnChild(t, badgeType) {
-	return t.get('card', 'shared', 'parent').then(async function(parentData) {
-		if (parentData === undefined) {
+function showBadgeOnChild(t, badgeType, pluginData) {
+	return pluginData.then(async function(pluginData) {
+		if (pluginData.parent === undefined) {
 			return {};
 		}
+		
+		const parentData = pluginData.parent;
 		
 		switch (badgeType) {
 			case 'card-badges':
@@ -1256,34 +1262,38 @@ TrelloPowerUp.initialize({
 		});
 	},
 	'card-badges': function(t, options) {
+		const pluginData = t.get('card', 'shared');
+		
 		return [
 			{
 				dynamic: function() {
-					return showBadgeOnParent(t, options.context.command);
+					return showBadgeOnParent(t, options.context.command, pluginData);
 				},
 			},
 			{
 				dynamic: function() {
-					return showBadgeOnChild(t, options.context.command);
+					return showBadgeOnChild(t, options.context.command, pluginData);
 				},
 			},
 		];
 	},
 	'card-detail-badges': function(t, options) {
+		const pluginData = t.get('card', 'shared');
+		
 		return [
 			{
 				dynamic: function() {
-					return showBadgeOnParent(t, options.context.command);
+					return showBadgeOnParent(t, options.context.command, pluginData);
 				},
 			},
 			{
 				dynamic: function() {
-					return showBadgeOnChild(t, options.context.command);
+					return showBadgeOnChild(t, options.context.command, pluginData);
 				},
 			},
 			{
 				dynamic: function() {
-					return processQueue(t);
+					return processQueue(t, pluginData);
 				},
 			},
 		];
