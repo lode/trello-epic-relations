@@ -151,10 +151,7 @@ function getCheckItems(t, checklistId) {
 /**
  * get parentData when the relations have changed
  * 
- * @param  {object}             t           context
- * @param  {object[]|undefined} attachments when passed will be used instead of another API call {
- *         @var {string} id
- * }
+ * @param  {object}             t context
  * @return {object}             newData {
  *         @var {object|undefined} parentCard {
  *              @var {string} id
@@ -168,12 +165,10 @@ function getCheckItems(t, checklistId) {
  *         }
  * }
  */
-async function getSyncParentData(t, attachments) {
-	if (attachments === undefined) {
-		attachments = await t.card('attachments').then(function(card) {
-			return card.attachments;
-		});
-	}
+async function getSyncParentData(t) {
+	const attachments = await t.card('attachments').then(function(card) {
+		return card.attachments;
+	});
 	
 	let newData = {
 		parentCard: undefined,
@@ -1040,9 +1035,6 @@ function showBadgeOnParent(t, badgeType) {
  * 
  * @param  {object}             t         context
  * @param  {string}             badgeType front ('card-badges') or back ('card-detail-badges') of the card
- * @param  {object[]|undefined} attachments passed for front badges
- *         @var {string} id
- * }
  * @return {object} {
  *         @var {string}   icon     optional, only for front badges
  *         @var {string}   title    optional, only for back badges
@@ -1051,7 +1043,7 @@ function showBadgeOnParent(t, badgeType) {
  *         @var {Function} callback optional, only for back badges
  * }
  */
-function showBadgeOnChild(t, badgeType, attachments) {
+function showBadgeOnChild(t, badgeType) {
 	// process cross-board queue
 	if (badgeType === 'card-detail-badges') {
 		t.get('organization', 'shared', 'sync-parent-' + t.getContext().card, false).then(function(shouldSyncParent) {
@@ -1060,7 +1052,7 @@ function showBadgeOnChild(t, badgeType, attachments) {
 			}
 			
 			t.remove('organization', 'shared', 'sync-parent-' + t.getContext().card);
-			getSyncParentData(t, attachments).then(function(syncData) {
+			getSyncParentData(t).then(function(syncData) {
 				if (syncData.parentCard === undefined) {
 					clearStoredParent(t);
 				}
@@ -1267,7 +1259,7 @@ TrelloPowerUp.initialize({
 			},
 			{
 				dynamic: function() {
-					return showBadgeOnChild(t, options.context.command, options.attachments);
+					return showBadgeOnChild(t, options.context.command);
 				},
 			},
 		];
