@@ -679,6 +679,22 @@ async function removeChildren(t, childrenData) {
  * @param  {Promise} pluginData
  */
 function processQueue(t, badgeType, pluginData) {
+	if (badgeType === 'card-badges') {
+		pluginData.then(async function(pluginData) {
+			// cleanup data for copied cards
+			if (pluginData.copyDetection !== undefined && pluginData.copyDetection !== t.getContext().card) {
+				// we can only cleanup the plugindata, let the user delete the attachment/checklists
+				// the attachment/checklist ids got regenerated for the copied card, thus we can't (easily) delete them
+				// also, users might want to keep them
+				clearStoredData(t);
+				t.alert({
+					message:  'Relationships on the copied card are disconnected. You can delete the attachment/checklist, and optionally re-create the prefered relations.',
+					duration: 10,
+				});
+			}
+		});
+	}
+	
 	if (badgeType === 'card-detail-badges') {
 		// process cross-board queue to add parents to children
 		t.get('organization', 'shared', 'sync-parent-' + t.getContext().card, false).then(function(shouldSyncParent) {
@@ -877,6 +893,15 @@ function clearStoredChild(t, parentShortLink, parentCardId, currentData) {
  */
 function clearStoredChildren(t) {
 	t.remove('card', 'shared', 'children');
+}
+
+function clearStoredData(t) {
+	t.remove('card', 'shared', [
+		'children',
+		'copyDetection',
+		'parent',
+		'updating',
+	]);
 }
 
 /**
