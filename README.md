@@ -56,6 +56,7 @@ Note, every add/remove action is automatically synced to the related card.
 This works across boards within the same organization as well. Even if those boards don't have the plugin installed.
 
 Be aware that **you can't (yet) manually change the checklist or card attachment**. Always use the card buttons to do so.
+You can sort card attachments or checklists, rename checklists, or update checkitems (marking (in)complete, attaching people and due dates).
 
 
 ## Contributing
