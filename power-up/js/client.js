@@ -1260,13 +1260,25 @@ function showRemoveChildrenForm(t, childrenData) {
 				});
 			}
 			
-			popupItems.push({
-				text: '× Remove all tasks',
-				callback: function(t) {
-					removeChildren(t, childrenData);
-					t.closePopup();
-				}
-			});
+			if (popupItems.length > 2) {
+				popupItems.push({
+					text: '× Remove all tasks ...',
+					callback: function(t) {
+						t.popup({
+							type:         'confirm',
+							title:        'Remove all tasks',
+							message:      'This will remove the relationship between all tasks and this epic. It will also remove the whole tasks checklist.',
+							confirmStyle: 'danger',
+							confirmText:  'Delete it all, I\'m sure!',
+							cancelText:   'Never mind',
+							onConfirm:    function(t) {
+								removeChildren(t, childrenData);
+								t.closePopup();
+							},
+						});
+					},
+				});
+			}
 			
 			return popupItems;
 		},
