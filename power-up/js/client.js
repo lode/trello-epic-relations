@@ -481,10 +481,9 @@ async function searchCards(t, searchTerm, parentOrChild, callback) {
 				
 				if (parentOrChild === 'child' && pluginData.children !== undefined) {
 					cards.push({
-						text:     '× Remove all tasks (remove the EPIC from the task card to remove a single task)',
+						text:     '× Remove a task ...',
 						callback: function(t) {
-							removeChildren(t, pluginData.children);
-							t.closePopup();
+							showRemoveChildrenForm(t, pluginData.children);
 						},
 					});
 				}
@@ -669,6 +668,29 @@ async function removeChildren(t, childrenData) {
 		else {
 			clearStoredParent(t, childShortLink);
 		}
+	}
+}
+
+async function removeChild(t, childrenData, shortLink) {
+	// remove child from parent
+	const checklistId      = childrenData.checklistId;
+	const checkItemId      = childrenData.checkItemIds[shortLink];
+	await deleteCheckItem(t, checklistId, checkItemId);
+	
+	const parentCard = await t.card('id', 'shortLink');
+	clearStoredChild(t, parentCard.shortLink, parentCard.id, childrenData);
+	
+	// remove parent from child
+	const parentOfChild = await getPluginData(t, shortLink, 'parent');
+	deleteAttachment(t, shortLink, parentOfChild.attachmentId);
+	
+	const childCard = await getCardByIdOrShortLink(t, shortLink);
+	if (childCard.idBoard !== undefined && childCard.idBoard !== t.getContext().board) {
+		// use organization-level plugindata to store parent data for cross-board relations
+		queueSyncingParent(t, childCard.id);
+	}
+	else {
+		clearStoredParent(t, shortLink);
 	}
 }
 
@@ -1196,6 +1218,54 @@ function showChildrenForm(t) {
 				addChild(t, card);
 				t.closePopup();
 			});
+		},
+	});
+}
+
+function showRemoveChildrenForm(t, childrenData) {
+	return t.popup({
+		title: 'Remove a task',
+		items: async function(t, options) {
+			const popupItems     = [];
+			const shortLinks     = childrenData.shortLinks.slice(); // copy
+			const cardsInContext = await t.cards('name', 'shortLink');
+			
+			popupItems.push({
+				text: '× Remove all tasks',
+				callback: function(t) {
+					removeChildren(t, childrenData);
+					t.closePopup();
+				}
+			});
+			
+			for (let cardInsideContext of cardsInContext) {
+				let index = shortLinks.indexOf(cardInsideContext.shortLink);
+				if (index === -1) {
+					continue;
+				}
+				
+				popupItems.push({
+					text: cardInsideContext.name,
+					callback: function(t) {
+						removeChild(t, childrenData, cardInsideContext.shortLink);
+						t.closePopup();
+					},
+				});
+				shortLinks.splice(index, 1);
+			}
+			
+			for (let shortLink of shortLinks) {
+				let cardOutsideContext = await getCardByIdOrShortLink(t, shortLink);
+				popupItems.push({
+					text: cardOutsideContext.name,
+					callback: function(t) {
+						removeChild(t, childrenData, cardOutsideContext.shortLink);
+						t.closePopup();
+					},
+				});
+			}
+			
+			return popupItems;
 		},
 	});
 }
