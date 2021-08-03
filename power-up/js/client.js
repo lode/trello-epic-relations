@@ -1233,14 +1233,6 @@ function showRemoveChildrenForm(t, childrenData) {
 			const shortLinks     = childrenData.shortLinks.slice(); // copy
 			const cardsInContext = await t.cards('name', 'shortLink');
 			
-			popupItems.push({
-				text: '× Remove all tasks',
-				callback: function(t) {
-					removeChildren(t, childrenData);
-					t.closePopup();
-				}
-			});
-			
 			for (let cardInsideContext of cardsInContext) {
 				let index = shortLinks.indexOf(cardInsideContext.shortLink);
 				if (index === -1) {
@@ -1267,6 +1259,14 @@ function showRemoveChildrenForm(t, childrenData) {
 					},
 				});
 			}
+			
+			popupItems.push({
+				text: '× Remove all tasks',
+				callback: function(t) {
+					removeChildren(t, childrenData);
+					t.closePopup();
+				}
+			});
 			
 			return popupItems;
 		},
