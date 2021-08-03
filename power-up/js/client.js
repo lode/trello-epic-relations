@@ -677,13 +677,15 @@ async function removeChild(t, childrenData, shortLink) {
 	const checkItemId      = childrenData.checkItemIds[shortLink];
 	await deleteCheckItem(t, checklistId, checkItemId);
 	
-	const parentCard = await t.card('id', 'shortLink');
-	clearStoredChild(t, parentCard.shortLink, parentCard.id, childrenData);
-	
 	// remove parent from child
 	const parentOfChild = await getPluginData(t, shortLink, 'parent');
-	deleteAttachment(t, shortLink, parentOfChild.attachmentId);
+	await deleteAttachment(t, shortLink, parentOfChild.attachmentId);
 	
+	// clear child data
+	const parentCard = await t.card('id', 'shortLink');
+	await clearStoredChild(t, parentCard.shortLink, parentCard.id, childrenData);
+	
+	// clear parent data
 	const childCard = await getCardByIdOrShortLink(t, shortLink);
 	if (childCard.idBoard !== undefined && childCard.idBoard !== t.getContext().board) {
 		// use organization-level plugindata to store parent data for cross-board relations
@@ -857,7 +859,7 @@ function storeChild(t, checklistId, childCard, checkItem, contextCardId='card') 
 function storeChildren(t, childrenData, contextCardId='card') {
 	const cardId = (contextCardId !== 'card') ? contextCardId : t.getContext().card;
 	
-	t.set(contextCardId, 'shared', {
+	return t.set(contextCardId, 'shared', {
 		copyDetection: cardId,
 		children:      childrenData,
 	});
@@ -898,14 +900,15 @@ function clearStoredParent(t, contextCardId='card') {
  * 
  * @param  {object} t               without context
  * @param  {string} parentShortLink
+ * @param  {string} parentCardId
  * @param  {object} currentData {
  *         @var {string} checklistId
  * }
  */
 function clearStoredChild(t, parentShortLink, parentCardId, currentData) {
 	// nothing specific to that child, just sync the current state assuming the checkitem was removed before
-	getSyncChildrenData(t, parentShortLink, currentData).then(function(newData) {
-		storeChildren(t, newData, parentCardId);
+	return getSyncChildrenData(t, parentShortLink, currentData).then(function(newData) {
+		return storeChildren(t, newData, parentCardId);
 	});
 }
 
