@@ -1136,9 +1136,11 @@ function showBadgeOnChild(t, badgeType, pluginData) {
 		
 		switch (badgeType) {
 			case 'card-badges':
+				const shortName = (parentData.name.length > 20) ? parentData.name.substring(0, 20) + ' ...' : parentData.name;
+				
 				return {
 					icon:  ICON_UP,
-					text:  'part of ' + parentData.name,
+					text:  'part of ' + shortName,
 					color: 'light-gray',
 				};
 			
