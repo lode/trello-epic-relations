@@ -671,20 +671,26 @@ async function removeChildren(t, childrenData) {
 	}
 }
 
+/**
+ * remove one child relation from current (parent) card
+ * 
+ * @param  {object} t            context
+ * @param  {object} childrenData {
+ *         @var {string} checklistId
+ *         @var {object} checkItemIds map of shortLinks to checkItemIds
+ * }
+ * @param  {string} shortLink    of the child card to remove
+ */
 async function removeChild(t, childrenData, shortLink) {
 	// remove child from parent
-	const checklistId      = childrenData.checklistId;
-	const checkItemId      = childrenData.checkItemIds[shortLink];
+	const checklistId = childrenData.checklistId;
+	const checkItemId = childrenData.checkItemIds[shortLink];
 	await deleteCheckItem(t, checklistId, checkItemId);
+	await clearStoredChild(t, shortLink);
 	
 	// remove parent from child
 	const parentOfChild = await getPluginData(t, shortLink, 'parent');
 	await deleteAttachment(t, shortLink, parentOfChild.attachmentId);
-	
-	// clear child data
-	await clearStoredChild(t, shortLink);
-	
-	// clear parent data
 	const childCard = await getCardByIdOrShortLink(t, shortLink);
 	if (childCard.idBoard !== undefined && childCard.idBoard !== t.getContext().board) {
 		// use organization-level plugindata to store parent data for cross-board relations
@@ -858,7 +864,7 @@ function storeChild(t, checklistId, childCard, checkItem, contextCardId='card') 
 function storeChildren(t, childrenData, contextCardId='card') {
 	const cardId = (contextCardId !== 'card') ? contextCardId : t.getContext().card;
 	
-	return t.set(contextCardId, 'shared', {
+	t.set(contextCardId, 'shared', {
 		copyDetection: cardId,
 		children:      childrenData,
 	});
@@ -900,9 +906,10 @@ function clearStoredParent(t, contextCardId='card') {
  * @param  {object} t              without context
  * @param  {string} childShortLink the one to remove
  * @param  {string} contextCardId  the parent, optional, defaults to context of the current card
+ * @return {Promise}
  */
 function clearStoredChild(t, childShortLink, contextCardId='card') {
-	t.get(contextCardId, 'shared', 'children').then(async function(childrenData) {
+	return t.get(contextCardId, 'shared', 'children').then(async function(childrenData) {
 		const index = childrenData.shortLinks.indexOf(childShortLink);
 		
 		childrenData.shortLinks.splice(index, 1);
@@ -1226,6 +1233,15 @@ function showChildrenForm(t) {
 	});
 }
 
+/**
+ * @param  {object} t            context
+ * @param  {object} childrenData {
+ *         @var {string}   checklistId
+ *         @var {string[]} shortLinks
+ *         @var {object}   checkItemIds map of shortLinks to checkItemIds
+ * }
+ * @return {Promise}
+ */
 function showRemoveChildrenForm(t, childrenData) {
 	return t.popup({
 		title: 'Remove a task',
