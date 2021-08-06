@@ -791,6 +791,31 @@ function processQueue(t, badgeType, pluginData) {
 						storeChildren(t, childrenData);
 					}
 				});
+				
+				// @todo only when changed
+				if (childrenData.shortLinks.length > 0) {
+					t.card('name').then(function(parentCard) {
+						for (let childShortLink of childrenData.shortLinks) {
+							getPluginData(t, childShortLink, 'parent').then(function(parentData) {
+								// @todo skip silently if parentData is absent, it might be a cross-board card which didn't get processed yet
+								
+								if (parentData.name !== parentCard.name) {
+									getCardByIdOrShortLink(t, childShortLink).then(function(childCard) {
+										if (childCard.idBoard !== undefined && childCard.idBoard !== t.getContext().board) {
+											console.debug('updating ' + childShortLink + '/' + childCard.name + ' via org scope');
+											// use organization-level plugindata to store parent data for cross-board relations
+											queueSyncingParent(t, childCard.id);
+										}
+										else {
+											console.debug('updating ' + childShortLink + '/' + childCard.name + ' via context');
+											updateParentName(t, parentData, parentCard.name, childShortLink);
+										}
+									});
+								}
+							});
+						}
+					});
+				}
 			}
 		});
 	}
@@ -820,6 +845,13 @@ function storeParent(t, parentCard, attachment, contextCardId='card') {
 			name:         parentCard.name,
 		},
 	});
+}
+
+function updateParentName(t, parentData, parentName, contextCardId='card') {
+	const cardId = (contextCardId !== 'card') ? contextCardId : t.getContext().card;
+	
+	parentData.name = parentName;
+	t.set(contextCardId, 'shared', 'parent', parentData);
 }
 
 /**
