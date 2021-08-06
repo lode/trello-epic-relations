@@ -480,12 +480,23 @@ async function searchCards(t, searchTerm, parentOrChild, callback) {
 				}
 				
 				if (parentOrChild === 'child' && pluginData.children !== undefined) {
-					cards.push({
-						text:     '× Remove a task ...',
-						callback: function(t) {
-							showRemoveChildrenForm(t, pluginData.children);
-						},
-					});
+					if (pluginData.children.shortLinks.length > 0) {
+						cards.push({
+							text:     '× Remove a task ...',
+							callback: function(t) {
+								showRemoveChildrenForm(t, pluginData.children);
+							},
+						});
+					}
+					else {
+						cards.push({
+							text:     '× Remove task checklist',
+							callback: function(t) {
+								removeChildren(t, pluginData.children);
+								t.closePopup();
+							},
+						});
+					}
 				}
 			}
 			
