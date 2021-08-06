@@ -1440,44 +1440,20 @@ TrelloPowerUp.initialize({
 	'card-badges': function(t, options) {
 		const pluginData = t.get('card', 'shared');
 		
-		return [
-			{
-				dynamic: function() {
-					return showBadgeOnParent(t, options.context.command, pluginData);
-				},
-			},
-			{
-				dynamic: function() {
-					return showBadgeOnChild(t, options.context.command, pluginData);
-				},
-			},
-			{
-				dynamic: function() {
-					return processQueue(t, options.context.command, pluginData);
-				},
-			},
-		];
+		return Promise.all([
+			showBadgeOnParent(t, options.context.command, pluginData),
+			showBadgeOnChild(t, options.context.command, pluginData),
+			processQueue(t, options.context.command, pluginData),
+		]);
 	},
 	'card-detail-badges': function(t, options) {
 		const pluginData = t.get('card', 'shared');
 		
-		return [
-			{
-				dynamic: function() {
-					return showBadgeOnParent(t, options.context.command, pluginData);
-				},
-			},
-			{
-				dynamic: function() {
-					return showBadgeOnChild(t, options.context.command, pluginData);
-				},
-			},
-			{
-				dynamic: function() {
-					return processQueue(t, options.context.command, pluginData);
-				},
-			},
-		];
+		return Promise.all([
+			showBadgeOnParent(t, options.context.command, pluginData),
+			showBadgeOnChild(t, options.context.command, pluginData),
+			processQueue(t, options.context.command, pluginData),
+		]);
 	},
 	'authorization-status': function(t) {
 		return t.get('member', 'private', 'token').then(function(token) {
