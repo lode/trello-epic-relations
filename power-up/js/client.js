@@ -481,10 +481,9 @@ async function searchCards(t, searchTerm, parentOrChild, callback) {
 				
 				if (parentOrChild === 'child' && pluginData.children !== undefined) {
 					cards.push({
-						text:     '× Remove all tasks (remove the EPIC from the task card to remove a single task)',
+						text:     '× Remove a task ...',
 						callback: function(t) {
-							removeChildren(t, pluginData.children);
-							t.closePopup();
+							showRemoveChildrenForm(t, pluginData.children);
 						},
 					});
 				}
@@ -636,7 +635,7 @@ async function removeParent(t, parentData) {
 		queueSyncingChildren(t, parentCard.id);
 	}
 	else {
-		clearStoredChild(t, parentCard.shortLink, parentCard.id, childrenOfParent);
+		clearStoredChild(t, childCard.shortLink, parentCard.id);
 	}
 }
 
@@ -669,6 +668,36 @@ async function removeChildren(t, childrenData) {
 		else {
 			clearStoredParent(t, childShortLink);
 		}
+	}
+}
+
+/**
+ * remove one child relation from current (parent) card
+ * 
+ * @param  {object} t            context
+ * @param  {object} childrenData {
+ *         @var {string} checklistId
+ *         @var {object} checkItemIds map of shortLinks to checkItemIds
+ * }
+ * @param  {string} shortLink    of the child card to remove
+ */
+async function removeChild(t, childrenData, shortLink) {
+	// remove child from parent
+	const checklistId = childrenData.checklistId;
+	const checkItemId = childrenData.checkItemIds[shortLink];
+	await deleteCheckItem(t, checklistId, checkItemId);
+	await clearStoredChild(t, shortLink);
+	
+	// remove parent from child
+	const parentOfChild = await getPluginData(t, shortLink, 'parent');
+	await deleteAttachment(t, shortLink, parentOfChild.attachmentId);
+	const childCard = await getCardByIdOrShortLink(t, shortLink);
+	if (childCard.idBoard !== undefined && childCard.idBoard !== t.getContext().board) {
+		// use organization-level plugindata to store parent data for cross-board relations
+		queueSyncingParent(t, childCard.id);
+	}
+	else {
+		clearStoredParent(t, shortLink);
 	}
 }
 
@@ -874,16 +903,20 @@ function clearStoredParent(t, contextCardId='card') {
 /**
  * clear stored child metadata
  * 
- * @param  {object} t               without context
- * @param  {string} parentShortLink
- * @param  {object} currentData {
- *         @var {string} checklistId
- * }
+ * @param  {object} t              without context
+ * @param  {string} childShortLink the one to remove
+ * @param  {string} contextCardId  the parent, optional, defaults to context of the current card
+ * @return {Promise}
  */
-function clearStoredChild(t, parentShortLink, parentCardId, currentData) {
-	// nothing specific to that child, just sync the current state assuming the checkitem was removed before
-	getSyncChildrenData(t, parentShortLink, currentData).then(function(newData) {
-		storeChildren(t, newData, parentCardId);
+function clearStoredChild(t, childShortLink, contextCardId='card') {
+	return t.get(contextCardId, 'shared', 'children').then(async function(childrenData) {
+		const index = childrenData.shortLinks.indexOf(childShortLink);
+		
+		childrenData.shortLinks.splice(index, 1);
+		delete childrenData.checkItemIds[childShortLink];
+		childrenData.counts = await getChildrenCountData(t, childrenData);
+		
+		storeChildren(t, childrenData, contextCardId);
 	});
 }
 
@@ -1196,6 +1229,75 @@ function showChildrenForm(t) {
 				addChild(t, card);
 				t.closePopup();
 			});
+		},
+	});
+}
+
+/**
+ * @param  {object} t            context
+ * @param  {object} childrenData {
+ *         @var {string}   checklistId
+ *         @var {string[]} shortLinks
+ *         @var {object}   checkItemIds map of shortLinks to checkItemIds
+ * }
+ * @return {Promise}
+ */
+function showRemoveChildrenForm(t, childrenData) {
+	return t.popup({
+		title: 'Remove a task',
+		items: async function(t, options) {
+			const popupItems     = [];
+			const shortLinks     = childrenData.shortLinks.slice(); // copy
+			const cardsInContext = await t.cards('name', 'shortLink');
+			
+			for (let cardInsideContext of cardsInContext) {
+				let index = shortLinks.indexOf(cardInsideContext.shortLink);
+				if (index === -1) {
+					continue;
+				}
+				
+				popupItems.push({
+					text: cardInsideContext.name,
+					callback: function(t) {
+						removeChild(t, childrenData, cardInsideContext.shortLink);
+						t.closePopup();
+					},
+				});
+				shortLinks.splice(index, 1);
+			}
+			
+			for (let shortLink of shortLinks) {
+				let cardOutsideContext = await getCardByIdOrShortLink(t, shortLink);
+				popupItems.push({
+					text: cardOutsideContext.name,
+					callback: function(t) {
+						removeChild(t, childrenData, cardOutsideContext.shortLink);
+						t.closePopup();
+					},
+				});
+			}
+			
+			if (popupItems.length > 2) {
+				popupItems.push({
+					text: '× Remove all tasks ...',
+					callback: function(t) {
+						t.popup({
+							type:         'confirm',
+							title:        'Remove all tasks',
+							message:      'This will remove the relationship between all tasks and this epic. It will also remove the whole tasks checklist.',
+							confirmStyle: 'danger',
+							confirmText:  'Delete it all, I\'m sure!',
+							cancelText:   'Never mind',
+							onConfirm:    function(t) {
+								removeChildren(t, childrenData);
+								t.closePopup();
+							},
+						});
+					},
+				});
+			}
+			
+			return popupItems;
 		},
 	});
 }
