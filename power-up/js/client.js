@@ -635,7 +635,7 @@ async function removeParent(t, parentData) {
 		queueSyncingChildren(t, parentCard.id);
 	}
 	else {
-		clearStoredChild(t, parentCard.shortLink, parentCard.id, childrenOfParent);
+		clearStoredChild(t, childCard.shortLink, parentCard.id);
 	}
 }
 
@@ -682,8 +682,7 @@ async function removeChild(t, childrenData, shortLink) {
 	await deleteAttachment(t, shortLink, parentOfChild.attachmentId);
 	
 	// clear child data
-	const parentCard = await t.card('id', 'shortLink');
-	await clearStoredChild(t, parentCard.shortLink, parentCard.id, childrenData);
+	await clearStoredChild(t, shortLink);
 	
 	// clear parent data
 	const childCard = await getCardByIdOrShortLink(t, shortLink);
@@ -898,17 +897,19 @@ function clearStoredParent(t, contextCardId='card') {
 /**
  * clear stored child metadata
  * 
- * @param  {object} t               without context
- * @param  {string} parentShortLink
- * @param  {string} parentCardId
- * @param  {object} currentData {
- *         @var {string} checklistId
- * }
+ * @param  {object} t              without context
+ * @param  {string} childShortLink the one to remove
+ * @param  {string} contextCardId  the parent, optional, defaults to context of the current card
  */
-function clearStoredChild(t, parentShortLink, parentCardId, currentData) {
-	// nothing specific to that child, just sync the current state assuming the checkitem was removed before
-	return getSyncChildrenData(t, parentShortLink, currentData).then(function(newData) {
-		return storeChildren(t, newData, parentCardId);
+function clearStoredChild(t, childShortLink, contextCardId='card') {
+	t.get(contextCardId, 'shared', 'children').then(async function(childrenData) {
+		const index = childrenData.shortLinks.indexOf(childShortLink);
+		
+		childrenData.shortLinks.splice(index, 1);
+		delete childrenData.checkItemIds[childShortLink];
+		childrenData.counts = await getChildrenCountData(t, childrenData);
+		
+		storeChildren(t, childrenData, contextCardId);
 	});
 }
 
