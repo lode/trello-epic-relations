@@ -741,7 +741,7 @@ function releaseAsUpdating(t) {
 }
 
 /**
- * process changes on the card and the queue of actions delayed because the card was out of context
+ * process changes on the card
  * 
  * @param  {object}  t          context
  * @param  {string}  badgeType  front ('card-badges') or back ('card-detail-badges') of the card
@@ -751,52 +751,66 @@ function processChanges(t, badgeType, pluginData) {
 	Promise.all([
 		pluginData,
 		t.card('name', 'shortLink', 'dateLastActivity'),
-		t.get('organization', 'shared', 'sync-parent-' + t.getContext().card, false),
-		t.get('organization', 'shared', 'sync-children-' + t.getContext().card, false),
 	]).then(function(values) {
-		let [pluginData, cardData, shouldSyncParent, shouldSyncChildren] = values;
+		let [pluginData, cardData] = values;
 		
+		const isCopiedCard   = (pluginData.copyDetection !== undefined && pluginData.copyDetection !== t.getContext().card);
 		const isUpdating     = (pluginData.updating !== undefined);
 		const hasNewActivity = (pluginData.cachedDateLastActivity === undefined || pluginData.cachedDateLastActivity !== cardData.dateLastActivity);
-		const isCopiedCard   = (pluginData.copyDetection !== undefined && pluginData.copyDetection !== t.getContext().card);
 		const hasChildren    = (pluginData.children !== undefined);
 		
-		if (hasNewActivity === false && shouldSyncParent === false && shouldSyncChildren === false) {
+		if (isCopiedCard) {
+			processCopiedCard(t);
+			
+			// make sure to not further process this copied card
 			return;
 		}
 		if (isUpdating) {
 			// @todo retry later
 			return;
 		}
+		if (hasNewActivity === false || hasChildren === false) {
+			return;
+		}
 		
 		// know when to update next time
-		if (hasNewActivity) {
-			t.set('card', 'shared', 'cachedDateLastActivity', cardData.dateLastActivity);
-		}
+		t.set('card', 'shared', 'cachedDateLastActivity', cardData.dateLastActivity);
 		
 		if (badgeType === 'card-badges') {
-			if (hasNewActivity && isCopiedCard) {
-				processCopiedCard(t);
-				
-				// make sure to not further process this copied card
-				return;
-			}
-			if (hasNewActivity && hasChildren) {
-				processParentNameChange(t, pluginData, cardData);
-			}
+			processParentNameChange(t, pluginData, cardData);
+		}
+		if (badgeType === 'card-detail-badges') {
+			processChildrenCounts(t, pluginData);
+		}
+	});
+}
+
+/**
+ * process queue of actions delayed because the card was out of context
+ * 
+ * @param  {object}  t          context
+ * @param  {Promise} pluginData
+ */
+function processQueue(t, pluginData) {
+	t.get('organization', 'shared', 'sync-parent-' + t.getContext().card, false).then(function(shouldSyncParent) {
+		if (shouldSyncParent === false) {
+			return;
 		}
 		
-		if (badgeType === 'card-detail-badges') {
-			if (shouldSyncParent !== false) {
-				processParentQueue(t);
-			}
-			if (shouldSyncChildren !== false) {
-				processChildrenQueue(t, pluginData, cardData);
-			}
-			if (hasNewActivity && hasChildren) {
-				processChildrenCounts(t, pluginData);
-			}
+		processParentQueue(t);
+	});
+	t.get('organization', 'shared', 'sync-children-' + t.getContext().card, false).then(function(shouldSyncChildren) {
+		if (shouldSyncChildren === false) {
+			return;
 		}
+		
+		Promise.all([
+			pluginData,
+			t.card('shortLink'),
+		]).then(function(values) {
+			let [pluginData, cardData] = values;
+			processChildrenQueue(t, pluginData, cardData);
+		});
 	});
 }
 
@@ -904,6 +918,7 @@ async function processParentNameChange(t, pluginData, cardData) {
 			return;
 		}
 		
+		// @todo get auth before this step
 		let childCard = await getCardByIdOrShortLink(t, childShortLink);
 		if (childCard.idBoard !== undefined && childCard.idBoard !== t.getContext().board) {
 			// use organization-level plugindata to store parent data for cross-board relations
@@ -1590,6 +1605,7 @@ TrelloPowerUp.initialize({
 			showBadgeOnParent(t, options.context.command, pluginData),
 			showBadgeOnChild(t, options.context.command, pluginData),
 			processChanges(t, options.context.command, pluginData),
+			processQueue(t, pluginData),
 		]);
 	},
 	'authorization-status': function(t) {
