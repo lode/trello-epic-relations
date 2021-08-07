@@ -518,7 +518,7 @@ async function searchCards(t, searchTerm, parentOrChild, callback) {
  * }
  */
 async function addParent(t, parentCard) {
-	await t.set('card', 'shared', 'updating', true);
+	await markAsUpdating(t);
 	
 	// check existing parent
 	await t.get('card', 'shared', 'parent').then(function(parentData) {
@@ -554,11 +554,7 @@ async function addParent(t, parentCard) {
 		storeChild(t, checklistId, childCard, checkItem, parentCard.id);
 	}
 	
-	// give some time before releasing as updating
-	// this seems needed as card updates from trello api can still come in
-	setTimeout(function() {
-		t.remove('card', 'shared', 'updating');
-	}, 100);
+	releaseAsUpdating(t);
 }
 
 /**
@@ -573,7 +569,7 @@ async function addParent(t, parentCard) {
  * }
  */
 async function addChild(t, childCard) {
-	await t.set('card', 'shared', 'updating', true);
+	await markAsUpdating(t);
 	
 	// check existing parent of child
 	const parentOfChild = await getPluginData(t, childCard.id, 'parent');
@@ -611,11 +607,7 @@ async function addChild(t, childCard) {
 		storeParent(t, parentCard, attachment, childCard.id);
 	}
 	
-	// give some time before releasing as updating
-	// this seems needed as card updates from trello api can still come in
-	setTimeout(function() {
-		t.remove('card', 'shared', 'updating');
-	}, 100);
+	releaseAsUpdating(t);
 }
 
 /**
@@ -628,6 +620,8 @@ async function addChild(t, childCard) {
  * }
  */
 async function removeParent(t, parentData) {
+	await markAsUpdating(t);
+	
 	// remove parent from child
 	const childCardId = t.getContext().card;
 	deleteAttachment(t, childCardId, parentData.attachmentId);
@@ -648,6 +642,8 @@ async function removeParent(t, parentData) {
 	else {
 		clearStoredChild(t, childCard.shortLink, parentCard.id);
 	}
+	
+	releaseAsUpdating(t);
 }
 
 /**
@@ -660,6 +656,8 @@ async function removeParent(t, parentData) {
  * }
  */
 async function removeChildren(t, childrenData) {
+	await markAsUpdating(t);
+	
 	// remove children from parent
 	const parentCardId = t.getContext().card;
 	deleteChecklist(t, parentCardId, childrenData.checklistId);
@@ -680,6 +678,8 @@ async function removeChildren(t, childrenData) {
 			clearStoredParent(t, childShortLink);
 		}
 	}
+	
+	releaseAsUpdating(t);
 }
 
 /**
@@ -693,6 +693,8 @@ async function removeChildren(t, childrenData) {
  * @param  {string} shortLink    of the child card to remove
  */
 async function removeChild(t, childrenData, shortLink) {
+	await markAsUpdating(t);
+	
 	// remove child from parent
 	const checklistId = childrenData.checklistId;
 	const checkItemId = childrenData.checkItemIds[shortLink];
@@ -710,6 +712,32 @@ async function removeChild(t, childrenData, shortLink) {
 	else {
 		clearStoredParent(t, shortLink);
 	}
+	
+	releaseAsUpdating(t);
+}
+
+/**
+ * mark a card as updating, to prevent simulatanuous processing of changes
+ * 
+ * @param  {object} t context
+ * @return {Promise}
+ */
+function markAsUpdating(t) {
+	return t.set('card', 'shared', 'updating', true);
+}
+
+/**
+ * release a card as updating
+ * 
+ * give some time before releasing as updating
+ * this seems needed as card updates from trello api can still come in
+ * 
+ * @param  {object} t context
+ */
+function releaseAsUpdating(t) {
+	setTimeout(function() {
+		t.remove('card', 'shared', 'updating');
+	}, 100);
 }
 
 /**
