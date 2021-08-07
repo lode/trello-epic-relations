@@ -833,8 +833,10 @@ function processChanges(t, badgeType, pluginData) {
 		
 		const hasNewActivity = (pluginData.cachedDateLastActivity === undefined || pluginData.cachedDateLastActivity !== cardData.dateLastActivity);
 		const hasChildren    = (pluginData.children !== undefined);
+		const isUpdating     = (pluginData.updating !== undefined);
 		
 		if (badgeType === 'card-badges') {
+			// process changing name of parent card
 			if (hasNewActivity && hasChildren) {
 				for (let childShortLink of pluginData.children.shortLinks) {
 					let parentOfChild = await getPluginData(t, childShortLink, 'parent');
@@ -861,7 +863,8 @@ function processChanges(t, badgeType, pluginData) {
 		
 		if (badgeType === 'card-detail-badges') {
 			// process marking child checkitems as complete
-			if (childrenData !== undefined && pluginData.updating === undefined) {
+			if (hasChildren && isUpdating === false) {
+				const childrenData = pluginData.children;
 				getChildrenCountData(t, childrenData).then(function(newCounts) {
 					if (JSON.stringify(newCounts) !== JSON.stringify(childrenData.counts)) {
 						childrenData.counts = newCounts;
