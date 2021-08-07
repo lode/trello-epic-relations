@@ -747,13 +747,30 @@ function releaseAsUpdating(t) {
  * @param  {Promise} pluginData
  */
 function processQueue(t, pluginData) {
+	// process cross-board queue to add parents to children
 	t.get('organization', 'shared', 'sync-parent-' + t.getContext().card, false).then(function(shouldSyncParent) {
 		if (shouldSyncParent === false) {
 			return;
 		}
 		
-		processParentQueue(t);
+		t.remove('organization', 'shared', 'sync-parent-' + t.getContext().card);
+		getSyncParentData(t).then(function(syncData) {
+			if (syncData.parentCard === undefined) {
+				clearStoredParent(t);
+			}
+			else {
+				storeParent(t, syncData.parentCard, syncData.attachment);
+			}
+		})
+		.catch(function(error) {
+			console.warn('Error processing queue to sync parent', error);
+			t.alert({
+				message: 'Something went wrong adding the EPIC, try creating the relationship again.',
+			});
+		});
 	});
+	
+	// process cross-board queue to add children to parents
 	t.get('organization', 'shared', 'sync-children-' + t.getContext().card, false).then(function(shouldSyncChildren) {
 		if (shouldSyncChildren === false) {
 			return;
@@ -763,8 +780,20 @@ function processQueue(t, pluginData) {
 			pluginData,
 			t.card('shortLink'),
 		]).then(function(values) {
-			let [pluginData, cardData] = values;
-			processChildrenQueue(t, pluginData, cardData);
+			let [pluginData, parentCard] = values;
+			const childrenData = pluginData.children;
+			
+			t.remove('organization', 'shared', 'sync-children-' + t.getContext().card);
+			
+			getSyncChildrenData(t, parentCard.shortLink, childrenData).then(function(newData) {
+				storeChildren(t, newData);
+			})
+			.catch(function(error) {
+				console.warn('Error processing queue to sync children', error);
+				t.alert({
+					message: 'Something went wrong adding the task, try creating the relationship again.',
+				});
+			});
 		});
 	});
 }
@@ -780,154 +809,68 @@ function processChanges(t, badgeType, pluginData) {
 	Promise.all([
 		pluginData,
 		t.card('name', 'shortLink', 'dateLastActivity'),
-	]).then(function(values) {
+	]).then(async function(values) {
 		let [pluginData, cardData] = values;
 		
-		const isCopiedCard   = (pluginData.copyDetection !== undefined && pluginData.copyDetection !== t.getContext().card);
-		const isUpdating     = (pluginData.updating !== undefined);
-		const hasNewActivity = (pluginData.cachedDateLastActivity === undefined || pluginData.cachedDateLastActivity !== cardData.dateLastActivity);
-		const hasChildren    = (pluginData.children !== undefined);
-		
+		// cleanup data for copied cards
+		const isCopiedCard = (pluginData.copyDetection !== undefined && pluginData.copyDetection !== t.getContext().card);
 		if (isCopiedCard) {
-			processCopiedCard(t);
+			// we can only cleanup the plugindata, let the user delete the attachment/checklists
+			// the attachment/checklist ids got regenerated for the copied card, thus we can't (easily) delete them
+			// also, users might want to keep them
+			clearStoredData(t);
+			t.alert({
+				message:  'Relationships on the copied card are disconnected. You can delete the attachment/checklist, and optionally re-create the prefered relations.',
+				duration: 10,
+			});
 			
 			// make sure to not further process this copied card
-			return;
-		}
-		if (isUpdating) {
-			// @todo retry later
-			return;
-		}
-		if (hasNewActivity === false || hasChildren === false) {
 			return;
 		}
 		
 		// know when to update next time
 		t.set('card', 'shared', 'cachedDateLastActivity', cardData.dateLastActivity);
 		
+		const hasNewActivity = (pluginData.cachedDateLastActivity === undefined || pluginData.cachedDateLastActivity !== cardData.dateLastActivity);
+		const hasChildren    = (pluginData.children !== undefined);
+		
 		if (badgeType === 'card-badges') {
-			processParentNameChange(t, pluginData, cardData);
-		}
-		if (badgeType === 'card-detail-badges') {
-			processChildrenCounts(t, pluginData);
-		}
-	});
-}
-
-/**
- * cleanup plugin data when a card was copied
- * 
- * we can only cleanup the plugindata, let the user delete the attachment/checklists
- * the attachment/checklist ids got regenerated for the copied card, thus we can't (easily) delete them
- * also, users might want to keep them
- * 
- * @param  {object} t context
- */
-function processCopiedCard(t) {
-	clearStoredData(t);
-	t.alert({
-		message:  'Relationships on the copied card are disconnected. You can delete the attachment/checklist, and optionally re-create the prefered relations.',
-		duration: 10,
-	});
-}
-
-/**
- * process cross-board queue to add parents to children
- * 
- * @param  {object} t context
- */
-function processParentQueue(t) {
-	t.remove('organization', 'shared', 'sync-parent-' + t.getContext().card);
-	getSyncParentData(t).then(function(syncData) {
-		if (syncData.parentCard === undefined) {
-			clearStoredParent(t);
-		}
-		else {
-			storeParent(t, syncData.parentCard, syncData.attachment);
-		}
-	})
-	.catch(function(error) {
-		console.warn('Error processing queue to sync parent', error);
-		t.alert({
-			message: 'Something went wrong adding the EPIC, try creating the relationship again.',
-		});
-	});
-}
-
-/**
- * process cross-board queue to add children to parents
- * 
- * @param  {object} t context
- * @param  {object} pluginData {
- *         @var {object} children
- * }
- * @param  {object} cardData   {
- *         @var {string} shortLink
- * }
- */
-function processChildrenQueue(t, pluginData, cardData) {
-	t.remove('organization', 'shared', 'sync-children-' + t.getContext().card);
-	
-	getSyncChildrenData(t, cardData.shortLink, pluginData.children).then(function(newData) {
-		storeChildren(t, newData);
-	})
-	.catch(function(error) {
-		console.warn('Error processing queue to sync children', error);
-		t.alert({
-			message: 'Something went wrong adding the task, try creating the relationship again.',
-		});
-	});
-}
-
-/**
- * process marking child checkitems as complete
- * 
- * @param  {object} t context
- * @param  {object} pluginData {
- *         @var {object} children
- * }
- */
-function processChildrenCounts(t, pluginData) {
-	getChildrenCountData(t, pluginData.children).then(function(newCounts) {
-		if (JSON.stringify(newCounts) !== JSON.stringify(pluginData.children.counts)) {
-			pluginData.children.counts = newCounts;
-			storeChildren(t, pluginData.children);
-		}
-	});
-}
-
-/**
- * process changing parent card name
- * 
- * @param  {object} t context
- * @param  {object} pluginData {
- *         @var {object} children
- * }
- * @param  {object} cardData   {
- *         @var {string} name
- * }
- */
-async function processParentNameChange(t, pluginData, cardData) {
-	for (let childShortLink of pluginData.children.shortLinks) {
-		let parentOfChild = await getPluginData(t, childShortLink, 'parent');
-		if (parentOfChild === undefined) {
-			console.warn('Skip syncing parent name change to child card ' + childShortLink + ', probably unprocessed cross-board child');
-			return;
-		}
-		if (parentOfChild.name === cardData.name) {
-			return;
+			if (hasNewActivity && hasChildren) {
+				for (let childShortLink of pluginData.children.shortLinks) {
+					let parentOfChild = await getPluginData(t, childShortLink, 'parent');
+					if (parentOfChild === undefined) {
+						console.warn('Skip syncing parent name change to child card ' + childShortLink + ', probably unprocessed cross-board child');
+						return;
+					}
+					if (parentOfChild.name === cardData.name) {
+						return;
+					}
+					
+					// @todo get auth before this step
+					let childCard = await getCardByIdOrShortLink(t, childShortLink);
+					if (childCard.idBoard !== undefined && childCard.idBoard !== t.getContext().board) {
+						// use organization-level plugindata to store parent data for cross-board relations
+						queueSyncingParent(t, childCard.id);
+					}
+					else {
+						updateParentName(t, parentOfChild, cardData.name, childShortLink);
+					}
+				}
+			}
 		}
 		
-		// @todo get auth before this step
-		let childCard = await getCardByIdOrShortLink(t, childShortLink);
-		if (childCard.idBoard !== undefined && childCard.idBoard !== t.getContext().board) {
-			// use organization-level plugindata to store parent data for cross-board relations
-			queueSyncingParent(t, childCard.id);
+		if (badgeType === 'card-detail-badges') {
+			// process marking child checkitems as complete
+			if (childrenData !== undefined && pluginData.updating === undefined) {
+				getChildrenCountData(t, childrenData).then(function(newCounts) {
+					if (JSON.stringify(newCounts) !== JSON.stringify(childrenData.counts)) {
+						childrenData.counts = newCounts;
+						storeChildren(t, childrenData);
+					}
+				});
+			}
 		}
-		else {
-			updateParentName(t, parentOfChild, cardData.name, childShortLink);
-		}
-	}
+	});
 }
 
 /**
