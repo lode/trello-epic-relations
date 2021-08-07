@@ -713,13 +713,13 @@ async function removeChild(t, childrenData, shortLink) {
 }
 
 /**
- * process queue of actions delayed because the card was out of context
+ * process changes on the card and the queue of actions delayed because the card was out of context
  * 
  * @param  {object}  t          context
  * @param  {string}  badgeType  front ('card-badges') or back ('card-detail-badges') of the card
  * @param  {Promise} pluginData
  */
-function processQueue(t, badgeType, pluginData) {
+function processChanges(t, badgeType, pluginData) {
 	Promise.all([
 		pluginData,
 		t.card('name', 'dateLastActivity'),
@@ -1479,7 +1479,7 @@ TrelloPowerUp.initialize({
 		return Promise.all([
 			showBadgeOnParent(t, options.context.command, pluginData),
 			showBadgeOnChild(t, options.context.command, pluginData),
-			processQueue(t, options.context.command, pluginData),
+			processChanges(t, options.context.command, pluginData),
 		]);
 	},
 	'card-detail-badges': function(t, options) {
@@ -1488,7 +1488,7 @@ TrelloPowerUp.initialize({
 		return Promise.all([
 			showBadgeOnParent(t, options.context.command, pluginData),
 			showBadgeOnChild(t, options.context.command, pluginData),
-			processQueue(t, options.context.command, pluginData),
+			processChanges(t, options.context.command, pluginData),
 		]);
 	},
 	'authorization-status': function(t) {
