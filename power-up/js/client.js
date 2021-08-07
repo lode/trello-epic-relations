@@ -941,6 +941,14 @@ function storeParent(t, parentCard, attachment, contextCardId='card') {
 	});
 }
 
+/**
+ * update the name in the stored parent data
+ * 
+ * @param  {object} t             without context
+ * @param  {object} parentData
+ * @param  {string} parentName
+ * @param  {string} contextCardId optional, defaults to 'card'
+ */
 function updateParentName(t, parentData, parentName, contextCardId='card') {
 	const cardId = (contextCardId !== 'card') ? contextCardId : t.getContext().card;
 	
