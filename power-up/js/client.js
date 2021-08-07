@@ -842,10 +842,10 @@ function processChanges(t, badgeType, pluginData) {
 					let parentOfChild = await getPluginData(t, childShortLink, 'parent');
 					if (parentOfChild === undefined) {
 						console.warn('Skip syncing parent name change to child card ' + childShortLink + ', probably unprocessed cross-board child');
-						return;
+						continue;
 					}
 					if (parentOfChild.name === cardData.name) {
-						return;
+						continue;
 					}
 					
 					// @todo get auth before this step
