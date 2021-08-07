@@ -741,6 +741,35 @@ function releaseAsUpdating(t) {
 }
 
 /**
+ * process queue of actions delayed because the card was out of context
+ * 
+ * @param  {object}  t          context
+ * @param  {Promise} pluginData
+ */
+function processQueue(t, pluginData) {
+	t.get('organization', 'shared', 'sync-parent-' + t.getContext().card, false).then(function(shouldSyncParent) {
+		if (shouldSyncParent === false) {
+			return;
+		}
+		
+		processParentQueue(t);
+	});
+	t.get('organization', 'shared', 'sync-children-' + t.getContext().card, false).then(function(shouldSyncChildren) {
+		if (shouldSyncChildren === false) {
+			return;
+		}
+		
+		Promise.all([
+			pluginData,
+			t.card('shortLink'),
+		]).then(function(values) {
+			let [pluginData, cardData] = values;
+			processChildrenQueue(t, pluginData, cardData);
+		});
+	});
+}
+
+/**
  * process changes on the card
  * 
  * @param  {object}  t          context
@@ -782,35 +811,6 @@ function processChanges(t, badgeType, pluginData) {
 		if (badgeType === 'card-detail-badges') {
 			processChildrenCounts(t, pluginData);
 		}
-	});
-}
-
-/**
- * process queue of actions delayed because the card was out of context
- * 
- * @param  {object}  t          context
- * @param  {Promise} pluginData
- */
-function processQueue(t, pluginData) {
-	t.get('organization', 'shared', 'sync-parent-' + t.getContext().card, false).then(function(shouldSyncParent) {
-		if (shouldSyncParent === false) {
-			return;
-		}
-		
-		processParentQueue(t);
-	});
-	t.get('organization', 'shared', 'sync-children-' + t.getContext().card, false).then(function(shouldSyncChildren) {
-		if (shouldSyncChildren === false) {
-			return;
-		}
-		
-		Promise.all([
-			pluginData,
-			t.card('shortLink'),
-		]).then(function(values) {
-			let [pluginData, cardData] = values;
-			processChildrenQueue(t, pluginData, cardData);
-		});
 	});
 }
 
