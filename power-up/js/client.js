@@ -720,8 +720,15 @@ async function removeChild(t, childrenData, shortLink) {
  * @param  {Promise} pluginData
  */
 function processQueue(t, badgeType, pluginData) {
-	if (badgeType === 'card-badges') {
-		pluginData.then(async function(pluginData) {
+	Promise.all([
+		pluginData,
+		t.card('name'),
+		t.get('organization', 'shared', 'sync-parent-' + t.getContext().card, false),
+		t.get('organization', 'shared', 'sync-children-' + t.getContext().card, false),
+	]).then(async function(values) {
+		let [pluginData, cardData, shouldSyncParent, shouldSyncChildren] = values;
+		
+		if (badgeType === 'card-badges') {
 			// cleanup data for copied cards
 			if (pluginData.copyDetection !== undefined && pluginData.copyDetection !== t.getContext().card) {
 				// we can only cleanup the plugindata, let the user delete the attachment/checklists
@@ -733,46 +740,34 @@ function processQueue(t, badgeType, pluginData) {
 					duration: 10,
 				});
 			}
-		});
-	}
-	
-	if (badgeType === 'card-detail-badges') {
-		// process cross-board queue to add parents to children
-		t.get('organization', 'shared', 'sync-parent-' + t.getContext().card, false).then(function(shouldSyncParent) {
-			if (shouldSyncParent === false) {
-				return;
+		}
+		
+		if (badgeType === 'card-detail-badges') {
+			// process cross-board queue to add parents to children
+			if (shouldSyncParent !== false) {
+				t.remove('organization', 'shared', 'sync-parent-' + t.getContext().card);
+				getSyncParentData(t).then(function(syncData) {
+					if (syncData.parentCard === undefined) {
+						clearStoredParent(t);
+					}
+					else {
+						storeParent(t, syncData.parentCard, syncData.attachment);
+					}
+				})
+				.catch(function(error) {
+					console.warn('Error processing queue to sync parent', error);
+					t.alert({
+						message: 'Something went wrong adding the EPIC, try creating the relationship again.',
+					});
+				});
 			}
 			
-			t.remove('organization', 'shared', 'sync-parent-' + t.getContext().card);
-			getSyncParentData(t).then(function(syncData) {
-				if (syncData.parentCard === undefined) {
-					clearStoredParent(t);
-				}
-				else {
-					storeParent(t, syncData.parentCard, syncData.attachment);
-				}
-			})
-			.catch(function(error) {
-				console.warn('Error processing queue to sync parent', error);
-				t.alert({
-					message: 'Something went wrong adding the EPIC, try creating the relationship again.',
-				});
-			});
-		});
-		
-		pluginData.then(async function(pluginData) {
-			const childrenData = pluginData.children;
-			
 			// process cross-board queue to add children to parents
-			t.get('organization', 'shared', 'sync-children-' + t.getContext().card, false).then(async function(shouldSyncChildren) {
-				if (shouldSyncChildren === false) {
-					return;
-				}
-				
+			if (shouldSyncChildren !== false) {
 				t.remove('organization', 'shared', 'sync-children-' + t.getContext().card);
 				
 				const parentCard = await t.card('shortLink');
-				getSyncChildrenData(t, parentCard.shortLink, childrenData).then(function(newData) {
+				getSyncChildrenData(t, parentCard.shortLink, pluginData.children).then(function(newData) {
 					storeChildren(t, newData);
 				})
 				.catch(function(error) {
@@ -781,10 +776,12 @@ function processQueue(t, badgeType, pluginData) {
 						message: 'Something went wrong adding the task, try creating the relationship again.',
 					});
 				});
-			});
+			}
 			
-			// process marking child checkitems as complete
-			if (childrenData !== undefined && pluginData.updating === undefined) {
+			if (pluginData.children !== undefined && pluginData.updating === undefined) {
+				const childrenData = pluginData.children;
+				
+				// process marking child checkitems as complete
 				getChildrenCountData(t, childrenData).then(function(newCounts) {
 					if (JSON.stringify(newCounts) !== JSON.stringify(childrenData.counts)) {
 						childrenData.counts = newCounts;
@@ -793,32 +790,28 @@ function processQueue(t, badgeType, pluginData) {
 				});
 				
 				// @todo only when changed
-				if (childrenData.shortLinks.length > 0) {
-					t.card('name').then(function(parentCard) {
-						for (let childShortLink of childrenData.shortLinks) {
-							getPluginData(t, childShortLink, 'parent').then(function(parentData) {
-								// @todo skip silently if parentData is absent, it might be a cross-board card which didn't get processed yet
-								
-								if (parentData.name !== parentCard.name) {
-									getCardByIdOrShortLink(t, childShortLink).then(function(childCard) {
-										if (childCard.idBoard !== undefined && childCard.idBoard !== t.getContext().board) {
-											console.debug('updating ' + childShortLink + '/' + childCard.name + ' via org scope');
-											// use organization-level plugindata to store parent data for cross-board relations
-											queueSyncingParent(t, childCard.id);
-										}
-										else {
-											console.debug('updating ' + childShortLink + '/' + childCard.name + ' via context');
-											updateParentName(t, parentData, parentCard.name, childShortLink);
-										}
-									});
-								}
-							});
-						}
-					});
+				for (let childShortLink of childrenData.shortLinks) {
+					let parentOfChild = await getPluginData(t, childShortLink, 'parent');
+					// @todo skip silently if parentData is absent, it might be a cross-board card which didn't get processed yet
+					
+					if (parentOfChild.name === cardData.name) {
+						return;
+					}
+					
+					let childCard = await getCardByIdOrShortLink(t, childShortLink);
+					if (childCard.idBoard !== undefined && childCard.idBoard !== t.getContext().board) {
+						console.debug('updating ' + childShortLink + '/' + childCard.name + ' via org scope');
+						// use organization-level plugindata to store parent data for cross-board relations
+						queueSyncingParent(t, childCard.id);
+					}
+					else {
+						console.debug('updating ' + childShortLink + '/' + childCard.name + ' via context');
+						updateParentName(t, parentOfChild, cardData.name, childShortLink);
+					}
 				}
 			}
-		});
-	}
+		}
+	});
 }
 
 /**
