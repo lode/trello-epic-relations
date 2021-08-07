@@ -722,15 +722,24 @@ async function removeChild(t, childrenData, shortLink) {
 function processQueue(t, badgeType, pluginData) {
 	Promise.all([
 		pluginData,
-		t.card('name'),
+		t.card('name', 'dateLastActivity'),
 		t.get('organization', 'shared', 'sync-parent-' + t.getContext().card, false),
 		t.get('organization', 'shared', 'sync-children-' + t.getContext().card, false),
 	]).then(async function(values) {
 		let [pluginData, cardData, shouldSyncParent, shouldSyncChildren] = values;
+		const hasNewActivity = (pluginData.cachedDateLastActivity === undefined || pluginData.cachedDateLastActivity !== cardData.dateLastActivity);
+		if (hasNewActivity === false && shouldSyncParent === false && shouldSyncChildren === false) {
+			return;
+		}
+		
+		// know when to update next time
+		if (hasNewActivity) {
+			t.set('card', 'shared', 'cachedDateLastActivity', cardData.dateLastActivity);
+		}
 		
 		if (badgeType === 'card-badges') {
 			// cleanup data for copied cards
-			if (pluginData.copyDetection !== undefined && pluginData.copyDetection !== t.getContext().card) {
+			if (hasNewActivity && pluginData.copyDetection !== undefined && pluginData.copyDetection !== t.getContext().card) {
 				// we can only cleanup the plugindata, let the user delete the attachment/checklists
 				// the attachment/checklist ids got regenerated for the copied card, thus we can't (easily) delete them
 				// also, users might want to keep them
@@ -778,7 +787,7 @@ function processQueue(t, badgeType, pluginData) {
 				});
 			}
 			
-			if (pluginData.children !== undefined && pluginData.updating === undefined) {
+			if (hasNewActivity && pluginData.children !== undefined && pluginData.updating === undefined) {
 				const childrenData = pluginData.children;
 				
 				// process marking child checkitems as complete
@@ -789,23 +798,23 @@ function processQueue(t, badgeType, pluginData) {
 					}
 				});
 				
-				// @todo only when changed
+				// process changing parent card name
 				for (let childShortLink of childrenData.shortLinks) {
 					let parentOfChild = await getPluginData(t, childShortLink, 'parent');
-					// @todo skip silently if parentData is absent, it might be a cross-board card which didn't get processed yet
-					
+					if (parentOfChild === undefined) {
+						console.warn('Skip syncing parent name change to child card ' + childShortLink + ', probably unprocessed cross-board child');
+						return;
+					}
 					if (parentOfChild.name === cardData.name) {
 						return;
 					}
 					
 					let childCard = await getCardByIdOrShortLink(t, childShortLink);
 					if (childCard.idBoard !== undefined && childCard.idBoard !== t.getContext().board) {
-						console.debug('updating ' + childShortLink + '/' + childCard.name + ' via org scope');
 						// use organization-level plugindata to store parent data for cross-board relations
 						queueSyncingParent(t, childCard.id);
 					}
 					else {
-						console.debug('updating ' + childShortLink + '/' + childCard.name + ' via context');
 						updateParentName(t, parentOfChild, cardData.name, childShortLink);
 					}
 				}
@@ -1348,12 +1357,14 @@ function showDebug(t) {
 		items: async function(t) {
 			let items = [];
 			
-			const dateLastActivity = await t.card('dateLastActivity').then(function(card) {
+			const pluginData = await t.get('card', 'shared');
+			
+			const actualDateLastActivity = await t.card('dateLastActivity').then(function(card) {
 				return card.dateLastActivity;
 			});
-			items.push({text: 'last activity: ' + dateLastActivity});
-			
-			const pluginData = await t.get('card', 'shared');
+			items.push({text: 'last activity:'});
+			items.push({text: '- actual: ' + actualDateLastActivity});
+			items.push({text: '- cached: ' + pluginData.cachedDateLastActivity});
 			
 			if (pluginData.copyDetection !== undefined) {
 				items.push({text: 'copy detection: ' + pluginData.copyDetection});
