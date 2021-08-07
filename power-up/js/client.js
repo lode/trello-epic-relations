@@ -777,6 +777,12 @@ function processChanges(t, badgeType, pluginData) {
 		if (badgeType === 'card-badges') {
 			if (hasNewActivity && isCopiedCard) {
 				processCopiedCard(t);
+				
+				// make sure to not further process this copied card
+				return;
+			}
+			if (hasNewActivity && hasChildren) {
+				processParentNameChange(t, pluginData, cardData);
 			}
 		}
 		
@@ -789,7 +795,6 @@ function processChanges(t, badgeType, pluginData) {
 			}
 			if (hasNewActivity && hasChildren) {
 				processChildrenCounts(t, pluginData);
-				processParentNameChange(t, pluginData, cardData)
 			}
 		}
 	});
@@ -1068,6 +1073,7 @@ function clearStoredChildren(t) {
  */
 function clearStoredData(t) {
 	t.remove('card', 'shared', [
+		'cachedDateLastActivity',
 		'children',
 		'copyDetection',
 		'parent',
