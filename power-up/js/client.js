@@ -109,6 +109,30 @@ async function getPluginData(t, cardIdOrShortLink, parentOrChildren) {
 }
 
 /**
+ * @param  {object} t                      without context
+ * @param  {string} childCardIdOrShortLink
+ * @param  {string} attachmentId
+ * @return {Promise} => {object} attachment
+ */
+function getAttachment(t, childCardIdOrShortLink, attachmentId) {
+	try {
+		return window.Trello.get('cards/' + childCardIdOrShortLink + '/attachments/' + attachmentId, {}, null,
+		function(error) {
+			t.alert({
+				message: JSON.stringify(error, null, '\t'),
+			});
+		});
+	}
+	catch (error) {
+		t.alert({
+			message: JSON.stringify(error, null, '\t'),
+		});
+		
+		return;
+	}
+}
+
+/**
  * @param  {object} t                       without context
  * @param  {string} parentCardIdOrShortLink
  * @return {Promise} => {object[]} checklists
@@ -150,6 +174,49 @@ function getCheckItems(t, checklistId) {
 }
 
 /**
+ * get parentData when an attachment is added
+ * 
+ * @param  {object}             t            context
+ * @param  {string}             attachmentId
+ * @return {object}             newData {
+ *         @var {object} parentCard {
+ *              @var {string} id
+ *              @var {string} name
+ *              @var {string} url
+ *              @var {string} shortLink
+ *              @var {string} idBoard
+ *         }
+ *         @var {object} attachment {
+ *              @var {string} id
+ *         }
+ * }
+ */
+async function getSyncParentData(t, attachmentId) {
+	const isAuthorized = await initializeAuthorization(t);
+	if (isAuthorized === false) {
+		throw new Error('not authorized to sync');
+	}
+	
+	const childCardId = t.getContext().card;
+	let attachment    = undefined;
+	
+	try {
+		attachment = await getAttachment(t, childCardId, attachmentId);
+	}
+	catch (error) {
+		throw new Error('no attachment found to sync');
+	}
+	
+	const parentShortLink = getCardShortLinkFromUrl(attachment.url);
+	const parentCard      = await getCardByIdOrShortLink(t, parentShortLink);
+	
+	return {
+		parentCard: parentCard,
+		attachment: attachment,
+	};
+}
+
+/**
  * get parentData when the relations have changed
  * 
  * @param  {object}             t context
@@ -166,7 +233,7 @@ function getCheckItems(t, checklistId) {
  *         }
  * }
  */
-async function getSyncParentData(t) {
+async function getSyncParentDataDeprecated(t) {
 	const attachments = await t.card('attachments').then(function(card) {
 		return card.attachments;
 	});
@@ -601,7 +668,7 @@ async function addChild(t, childCard) {
 	
 	if (childCard.idBoard !== undefined && childCard.idBoard !== t.getContext().board) {
 		// use organization-level plugindata to store parent data for cross-board relations
-		queueSyncingParent(t, childCard.id);
+		queueSyncingParent(t, childCard.id, attachment.id);
 	}
 	else {
 		storeParent(t, parentCard, attachment, childCard.id);
@@ -672,7 +739,7 @@ async function removeChildren(t, childrenData) {
 		const childCard = await getCardByIdOrShortLink(t, childShortLink);
 		if (childCard.idBoard !== undefined && childCard.idBoard !== t.getContext().board) {
 			// use organization-level plugindata to store parent data for cross-board relations
-			queueSyncingParent(t, childCard.id);
+			queueSyncingParent(t, childCard.id, 'remove');
 		}
 		else {
 			clearStoredParent(t, childShortLink);
@@ -707,7 +774,7 @@ async function removeChild(t, childrenData, shortLink) {
 	const childCard = await getCardByIdOrShortLink(t, shortLink);
 	if (childCard.idBoard !== undefined && childCard.idBoard !== t.getContext().board) {
 		// use organization-level plugindata to store parent data for cross-board relations
-		queueSyncingParent(t, childCard.id);
+		queueSyncingParent(t, childCard.id, 'remove');
 	}
 	else {
 		clearStoredParent(t, shortLink);
@@ -748,26 +815,43 @@ function releaseAsUpdating(t) {
  */
 function processQueue(t, pluginData) {
 	// process cross-board queue to add parents to children
-	t.get('organization', 'shared', 'sync-parent-' + t.getContext().card, false).then(function(shouldSyncParent) {
-		if (shouldSyncParent === false) {
+	t.get('organization', 'shared', 'sync-parent-' + t.getContext().card).then(function(syncParentAttachmentId) {
+		if (syncParentAttachmentId === undefined) {
 			return;
 		}
 		
 		t.remove('organization', 'shared', 'sync-parent-' + t.getContext().card);
-		getSyncParentData(t).then(function(syncData) {
-			if (syncData.parentCard === undefined) {
-				clearStoredParent(t);
-			}
-			else {
-				storeParent(t, syncData.parentCard, syncData.attachment);
-			}
-		})
-		.catch(function(error) {
-			console.warn('Error processing queue to sync parent', error);
-			t.alert({
-				message: 'Something went wrong adding the EPIC, try creating the relationship again.',
+		if (syncParentAttachmentId === true) {
+			// @deprecated old way of adding cross-board parents
+			getSyncParentDataDeprecated(t).then(function(syncData) {
+				if (syncData.parentCard === undefined) {
+					clearStoredParent(t);
+				}
+				else {
+					storeParent(t, syncData.parentCard, syncData.attachment);
+				}
+			})
+			.catch(function(error) {
+				console.warn('Error processing queue to sync parent', error);
+				t.alert({
+					message: 'Something went wrong adding the EPIC, try creating the relationship again.',
+				});
 			});
-		});
+		}
+		else if (syncParentAttachmentId === 'remove') {
+			clearStoredParent(t);
+		}
+		else {
+			getSyncParentData(t, syncParentAttachmentId).then(function(syncData) {
+				storeParent(t, syncData.parentCard, syncData.attachment);
+			})
+			.catch(function(error) {
+				console.warn('Error processing queue to sync parent', error);
+				t.alert({
+					message: 'Something went wrong adding the EPIC, try creating the relationship again.',
+				});
+			});
+		}
 	});
 	
 	// process cross-board queue to add children to parents
@@ -856,7 +940,7 @@ function processChanges(t, badgeType, pluginData) {
 					let childCard = await getCardByIdOrShortLink(t, childShortLink);
 					if (childCard.idBoard !== undefined && childCard.idBoard !== t.getContext().board) {
 						// use organization-level plugindata to store parent data for cross-board relations
-						queueSyncingParent(t, childCard.id);
+						queueSyncingParent(t, childCard.id, parentOfChild.attachmentId);
 					}
 					else {
 						updateParentName(t, parentOfChild, cardData.name, childShortLink);
@@ -993,11 +1077,12 @@ function queueSyncingChildren(t, parentCardId) {
 /**
  * store parent metadata for a cross-board relationship
  * 
- * @param  {object} t           without context
+ * @param  {object} t            without context
  * @param  {string} childCardId
+ * @param  {string} attachmentId
  */
-function queueSyncingParent(t, childCardId) {
-	t.set('organization', 'shared', 'sync-parent-' + childCardId, true);
+function queueSyncingParent(t, childCardId, attachmentId) {
+	t.set('organization', 'shared', 'sync-parent-' + childCardId, attachmentId);
 }
 
 /**
