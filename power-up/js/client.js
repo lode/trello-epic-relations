@@ -822,7 +822,7 @@ function processQueue(t, pluginData) {
 		
 		t.remove('organization', 'shared', 'sync-parent-' + t.getContext().card);
 		if (syncParentAttachmentId === true) {
-			// @deprecated old way of adding cross-board parents
+			// @deprecated old version way of adding cross-board parents
 			getSyncParentDataDeprecated(t).then(function(syncData) {
 				if (syncData.parentCard === undefined) {
 					clearStoredParent(t);
@@ -839,7 +839,10 @@ function processQueue(t, pluginData) {
 			});
 		}
 		else if (syncParentAttachmentId === 'remove') {
-			clearStoredParent(t);
+			// without timeout trello doesn't seem to process the t.remove() from this caller
+			setTimeout(function() {
+				clearStoredParent(t);
+			}, 100);
 		}
 		else {
 			getSyncParentData(t, syncParentAttachmentId).then(function(syncData) {
