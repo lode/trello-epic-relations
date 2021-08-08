@@ -838,6 +838,11 @@ function processChanges(t, badgeType, pluginData) {
 		if (badgeType === 'card-badges') {
 			// process changing name of parent card
 			if (hasNewActivity && hasChildren) {
+				const isAuthorized = await initializeAuthorization(t);
+				if (isAuthorized === false) {
+					throw new Error('not authorized to sync');
+				}
+				
 				for (let childShortLink of pluginData.children.shortLinks) {
 					let parentOfChild = await getPluginData(t, childShortLink, 'parent');
 					if (parentOfChild === undefined) {
@@ -848,7 +853,6 @@ function processChanges(t, badgeType, pluginData) {
 						continue;
 					}
 					
-					// @todo get auth before this step
 					let childCard = await getCardByIdOrShortLink(t, childShortLink);
 					if (childCard.idBoard !== undefined && childCard.idBoard !== t.getContext().board) {
 						// use organization-level plugindata to store parent data for cross-board relations
