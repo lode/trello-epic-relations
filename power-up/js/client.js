@@ -305,15 +305,17 @@ async function getSyncChildrenData(t, parentShortLink, currentData) {
 	}
 }
 
-async function getNewChildrenData(t, currentData) {
+async function getChangedChildrenData(t, currentData) {
 	const isAuthorized = await initializeAuthorization(t);
 	if (isAuthorized === false) {
 		throw new Error('not authorized to sync');
 	}
 	
-	const checkItems  = await getCheckItems(t, currentData.checklistId);
-	const newChildren = [];
+	const checkItems      = await getCheckItems(t, currentData.checklistId);
+	const changedChildren = [];
+	const keptShortLinks  = [];
 	
+	// find added checkitems
 	for (let checkItem of checkItems) {
 		childShortLink = getCardShortLinkFromUrl(checkItem.name);
 		if (childShortLink === undefined) {
@@ -322,18 +324,32 @@ async function getNewChildrenData(t, currentData) {
 		
 		parentOfChild = await getPluginData(t, childShortLink, 'parent');
 		if (parentOfChild !== undefined) {
+			keptShortLinks.push(childShortLink);
 			continue;
 		}
 		
 		let childCard = await getCardByIdOrShortLink(t, childShortLink);
 		
-		newChildren.push({
+		changedChildren.push({
+			action:    'add',
 			checkItem: checkItem,
 			childCard: childCard,
 		});
 	}
 	
-	return newChildren;
+	// find removed checkitems
+	for (let shortLink of currentData.shortLinks) {
+		if (keptShortLinks.includes(shortLink)) {
+			continue;
+		}
+		
+		changedChildren.push({
+			action:    'remove',
+			shortLink: shortLink,
+		});
+	}
+	
+	return changedChildren;
 }
 
 /**
@@ -725,13 +741,15 @@ async function removeChildren(t, childrenData) {
  * }
  * @param  {string} shortLink    of the child card to remove
  */
-async function removeChild(t, childrenData, shortLink) {
+async function removeChild(t, childrenData, shortLink, checkItemAlreadyDeleted=false) {
 	await markAsUpdating(t);
 	
 	// remove child from parent
-	const checklistId = childrenData.checklistId;
-	const checkItemId = childrenData.checkItemIds[shortLink];
-	await deleteCheckItem(t, checklistId, checkItemId);
+	if (checkItemAlreadyDeleted === false) {
+		const checklistId = childrenData.checklistId;
+		const checkItemId = childrenData.checkItemIds[shortLink];
+		await deleteCheckItem(t, checklistId, checkItemId);
+	}
 	await clearStoredChild(t, shortLink);
 	
 	// remove parent from child
@@ -899,9 +917,10 @@ function processChanges(t, badgeType, pluginData) {
 		}
 		
 		if (badgeType === 'card-detail-badges') {
+			const childrenData = pluginData.children;
+			
 			// process marking child checkitems as complete
-			if (hasChildren && isUpdating === false) {
-				const childrenData = pluginData.children;
+			if (hasNewActivity && hasChildren && isUpdating === false) {
 				getChildrenCountData(t, childrenData).then(function(newCounts) {
 					if (JSON.stringify(newCounts) !== JSON.stringify(childrenData.counts)) {
 						childrenData.counts = newCounts;
@@ -912,15 +931,16 @@ function processChanges(t, badgeType, pluginData) {
 			
 			// process new child checkitems
 			if (hasNewActivity && hasChildren && isUpdating === false) {
-				console.debug('process new child checkitems');
-				getNewChildrenData(t, childrenData).then(function(newChildren) {
-					console.debug('new children', newChildren);
-					for (let newChild of newChildren) {
-						addChild(t, newChild.childCard, newChild.checkItem);
+				getChangedChildrenData(t, childrenData).then(function(changedChildren) {
+					for (let changedChild of changedChildren) {
+						if (changedChild.action === 'add') {
+							addChild(t, changedChild.childCard, changedChild.checkItem);
+						}
+						if (changedChild.action === 'remove') {
+							let checkItemAlreadyDeleted = true;
+							removeChild(t, childrenData, changedChild.shortLink, checkItemAlreadyDeleted);
+						}
 					}
-				})
-				.catch(function(error) {
-					console.log('No children needing to sync', error);
 				});
 			}
 		}
