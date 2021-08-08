@@ -305,6 +305,37 @@ async function getSyncChildrenData(t, parentShortLink, currentData) {
 	}
 }
 
+async function getNewChildrenData(t, currentData) {
+	const isAuthorized = await initializeAuthorization(t);
+	if (isAuthorized === false) {
+		throw new Error('not authorized to sync');
+	}
+	
+	const checkItems  = await getCheckItems(t, currentData.checklistId);
+	const newChildren = [];
+	
+	for (let checkItem of checkItems) {
+		childShortLink = getCardShortLinkFromUrl(checkItem.name);
+		if (childShortLink === undefined) {
+			continue;
+		}
+		
+		parentOfChild = await getPluginData(t, childShortLink, 'parent');
+		if (parentOfChild !== undefined) {
+			continue;
+		}
+		
+		let childCard = await getCardByIdOrShortLink(t, childShortLink);
+		
+		newChildren.push({
+			checkItem: checkItem,
+			childCard: childCard,
+		});
+	}
+	
+	return newChildren;
+}
+
 /**
  * @param  {object}           t               without context
  * @param  {string}           checklistId
@@ -568,7 +599,7 @@ async function addParent(t, parentCard) {
  *        @var {string|undefined} idBoard
  * }
  */
-async function addChild(t, childCard) {
+async function addChild(t, childCard, checkItem=undefined) {
 	await markAsUpdating(t);
 	
 	// check existing parent of child
@@ -592,7 +623,9 @@ async function addChild(t, childCard) {
 		return checklist.id;
 	});
 	
-	const checkItem = await createCheckItem(t, childCard, checklistId);
+	if (checkItem === undefined) {
+		checkItem = await createCheckItem(t, childCard, checklistId);
+	}
 	await storeChild(t, checklistId, childCard, checkItem);
 	
 	// add parent to child
@@ -874,6 +907,20 @@ function processChanges(t, badgeType, pluginData) {
 						childrenData.counts = newCounts;
 						storeChildren(t, childrenData);
 					}
+				});
+			}
+			
+			// process new child checkitems
+			if (hasNewActivity && hasChildren && isUpdating === false) {
+				console.debug('process new child checkitems');
+				getNewChildrenData(t, childrenData).then(function(newChildren) {
+					console.debug('new children', newChildren);
+					for (let newChild of newChildren) {
+						addChild(t, newChild.childCard, newChild.checkItem);
+					}
+				})
+				.catch(function(error) {
+					console.log('No children needing to sync', error);
 				});
 			}
 		}
