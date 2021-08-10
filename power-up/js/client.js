@@ -315,6 +315,10 @@ async function getChangedChildrenData(t, currentData) {
 	const changedChildren = [];
 	const keptShortLinks  = [];
 	
+	let childShortLink;
+	let parentOfChild;
+	let childCard;
+	
 	// find added checkitems
 	for (let checkItem of checkItems) {
 		childShortLink = getCardShortLinkFromUrl(checkItem.name);
@@ -328,7 +332,7 @@ async function getChangedChildrenData(t, currentData) {
 			continue;
 		}
 		
-		let childCard = await getCardByIdOrShortLink(t, childShortLink);
+		childCard = await getCardByIdOrShortLink(t, childShortLink);
 		
 		changedChildren.push({
 			action:    'add',
