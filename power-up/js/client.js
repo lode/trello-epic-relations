@@ -219,6 +219,8 @@ async function getSyncParentData(t, attachmentId) {
 /**
  * get parentData when the relations have changed
  * 
+ * @deprecated
+ * 
  * @param  {object}             t context
  * @return {object}             newData {
  *         @var {object|undefined} parentCard {
@@ -386,6 +388,8 @@ async function getSyncChildrenData(t, checklistId, parentShortLink) {
 /**
  * get childrenData when the relations have changed
  * 
+ * @deprecated
+ * 
  * @param  {object}           t               context
  * @param  {string}           parentShortLink
  * @param  {object|undefined} currentData {
@@ -438,6 +442,8 @@ async function getSyncChildrenDataDeprecated(t, parentShortLink, currentData) {
 }
 
 /**
+ * @deprecated
+ * 
  * @param  {object}           t               without context
  * @param  {string}           checklistId
  * @param  {object[]}         checkItems {
