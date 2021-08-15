@@ -1675,7 +1675,12 @@ async function showQueueDebug(t) {
 					
 					try {
 						let card = await getCardByIdOrShortLink(t, cardId, {board: true, list: true});
-						queue.push({text: '- [' + card.board.name + ' / ' + card.list.name + '] ' + card.name + ': sync ' + type});
+						queue.push({
+							text: '- [' + card.board.name + ' / ' + card.list.name + '] ' + card.name + ': sync ' + type,
+							callback: function(t) {
+								t.navigate({url: card.url});
+							},
+						});
 					}
 					catch (error) {
 						queue.push({text: '- ' + cardId + ': ' + type});
