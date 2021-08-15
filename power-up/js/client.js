@@ -304,6 +304,57 @@ async function getSyncChildrenData(t, parentShortLink, currentData) {
 	}
 }
 
+async function getChangedChildrenData(t, currentData) {
+	const isAuthorized = await initializeAuthorization(t);
+	if (isAuthorized === false) {
+		throw new Error('not authorized to sync');
+	}
+	
+	const checkItems      = await getCheckItems(t, currentData.checklistId);
+	const changedChildren = [];
+	const keptShortLinks  = [];
+	
+	let childShortLink;
+	let parentOfChild;
+	let childCard;
+	
+	// find added checkitems
+	for (let checkItem of checkItems) {
+		childShortLink = getCardShortLinkFromUrl(checkItem.name);
+		if (childShortLink === undefined) {
+			continue;
+		}
+		
+		parentOfChild = await getPluginData(t, childShortLink, 'parent');
+		if (parentOfChild !== undefined) {
+			keptShortLinks.push(childShortLink);
+			continue;
+		}
+		
+		childCard = await getCardByIdOrShortLink(t, childShortLink);
+		
+		changedChildren.push({
+			action:    'add',
+			checkItem: checkItem,
+			childCard: childCard,
+		});
+	}
+	
+	// find removed checkitems
+	for (let shortLink of currentData.shortLinks) {
+		if (keptShortLinks.includes(shortLink)) {
+			continue;
+		}
+		
+		changedChildren.push({
+			action:    'remove',
+			shortLink: shortLink,
+		});
+	}
+	
+	return changedChildren;
+}
+
 /**
  * @param  {object}           t               without context
  * @param  {string}           checklistId
@@ -567,7 +618,7 @@ async function addParent(t, parentCard) {
  *        @var {string|undefined} idBoard
  * }
  */
-async function addChild(t, childCard) {
+async function addChild(t, childCard, checkItem=undefined) {
 	await markAsUpdating(t);
 	
 	// check existing parent of child
@@ -591,7 +642,9 @@ async function addChild(t, childCard) {
 		return checklist.id;
 	});
 	
-	const checkItem = await createCheckItem(t, childCard, checklistId);
+	if (checkItem === undefined) {
+		checkItem = await createCheckItem(t, childCard, checklistId);
+	}
 	await storeChild(t, checklistId, childCard, checkItem);
 	
 	// add parent to child
@@ -691,13 +744,15 @@ async function removeChildren(t, childrenData) {
  * }
  * @param  {string} shortLink    of the child card to remove
  */
-async function removeChild(t, childrenData, shortLink) {
+async function removeChild(t, childrenData, shortLink, checkItemAlreadyDeleted=false) {
 	await markAsUpdating(t);
 	
 	// remove child from parent
-	const checklistId = childrenData.checklistId;
-	const checkItemId = childrenData.checkItemIds[shortLink];
-	await deleteCheckItem(t, checklistId, checkItemId);
+	if (checkItemAlreadyDeleted === false) {
+		const checklistId = childrenData.checklistId;
+		const checkItemId = childrenData.checkItemIds[shortLink];
+		await deleteCheckItem(t, checklistId, checkItemId);
+	}
 	await clearStoredChild(t, shortLink);
 	
 	// remove parent from child
@@ -865,13 +920,29 @@ function processChanges(t, badgeType, pluginData) {
 		}
 		
 		if (badgeType === 'card-detail-badges') {
+			const childrenData = pluginData.children;
+			
 			// process marking child checkitems as complete
-			if (hasChildren && isUpdating === false) {
-				const childrenData = pluginData.children;
+			if (hasNewActivity && hasChildren && isUpdating === false) {
 				getChildrenCountData(t, childrenData).then(function(newCounts) {
 					if (JSON.stringify(newCounts) !== JSON.stringify(childrenData.counts)) {
 						childrenData.counts = newCounts;
 						storeChildren(t, childrenData);
+					}
+				});
+			}
+			
+			// process new child checkitems
+			if (hasNewActivity && hasChildren && isUpdating === false) {
+				getChangedChildrenData(t, childrenData).then(function(changedChildren) {
+					for (let changedChild of changedChildren) {
+						if (changedChild.action === 'add') {
+							addChild(t, changedChild.childCard, changedChild.checkItem);
+						}
+						if (changedChild.action === 'remove') {
+							let checkItemAlreadyDeleted = true;
+							removeChild(t, childrenData, changedChild.shortLink, checkItemAlreadyDeleted);
+						}
 					}
 				});
 			}
