@@ -322,6 +322,71 @@ async function getChildrenCountData(t, currentData) {
  * get childrenData when the relations have changed
  * 
  * @param  {object}           t               context
+ * @param  {string}           checklistId
+ * @param  {string}           parentShortLink
+ * @return {object}           newData {
+ *         @var {string}   checklistId
+ *         @var {string[]} shortLinks
+ *         @var {object}   checkItemIds map of shortLinks to checkItemIds
+ *         @var {object}   counts {
+ *              @var {int} total
+ *              @var {int} done
+ *         }
+ * }
+ */
+async function getSyncChildrenData(t, checklistId, parentShortLink) {
+	const isAuthorized = await initializeAuthorization(t);
+	if (isAuthorized === false) {
+		throw new Error('not authorized to sync');
+	}
+	
+	let newData = {
+		checklistId:  checklistId,
+		shortLinks:   [],
+		checkItemIds: {},
+		counts:       {total: 0, done: 0},
+	};
+	
+	const checkItems = await getCheckItems(t, checklistId);
+	if (checkItems.length === 0) {
+		return newData;
+	}
+	
+	let childShortLink;
+	let parentOfChild;
+	
+	for (let checkItem of checkItems) {
+		childShortLink = getCardShortLinkFromUrl(checkItem.name);
+		if (childShortLink === undefined) {
+			continue;
+		}
+		
+		parentOfChild = await getPluginData(t, childShortLink, 'parent');
+		if (parentOfChild === undefined) {
+			continue;
+		}
+		if (parentOfChild.shortLink !== parentShortLink) {
+			t.alert({
+				message: 'Task "' + checkItem.name + '" on the tasks checklist relates to a different parent.',
+			});
+			continue;
+		}
+		
+		newData.shortLinks.push(childShortLink);
+		newData.checkItemIds[childShortLink] = checkItem.id;
+		newData.counts.total += 1;
+		if (checkItem.state === 'complete') {
+			newData.counts.done += 1;
+		}
+	}
+	
+	return newData;
+}
+
+/**
+ * get childrenData when the relations have changed
+ * 
+ * @param  {object}           t               context
  * @param  {string}           parentShortLink
  * @param  {object|undefined} currentData {
  *         @var {string} checklistId
@@ -336,7 +401,7 @@ async function getChildrenCountData(t, currentData) {
  *         }
  * }
  */
-async function getSyncChildrenData(t, parentShortLink, currentData) {
+async function getSyncChildrenDataDeprecated(t, parentShortLink, currentData) {
 	const isAuthorized = await initializeAuthorization(t);
 	if (isAuthorized === false) {
 		throw new Error('not authorized to sync');
@@ -344,7 +409,7 @@ async function getSyncChildrenData(t, parentShortLink, currentData) {
 	
 	if (currentData !== undefined) {
 		const checkItems = await getCheckItems(t, currentData.checklistId);
-		const newData    = await collectChildrenDataToSync(t, currentData.checklistId, checkItems, parentShortLink, currentData);
+		const newData    = await collectChildrenDataToSyncDeprecated(t, currentData.checklistId, checkItems, parentShortLink, currentData);
 		if (JSON.stringify(newData) === JSON.stringify(currentData)) {
 			throw new Error('nothing changed to sync');
 		}
@@ -359,7 +424,7 @@ async function getSyncChildrenData(t, parentShortLink, currentData) {
 		
 		let newData;
 		for (let checklist of checklists) {
-			newData = await collectChildrenDataToSync(t, checklist.id, checklist.checkItems, parentShortLink, currentData);
+			newData = await collectChildrenDataToSyncDeprecated(t, checklist.id, checklist.checkItems, parentShortLink, currentData);
 			if (newData.shortLinks.length === 0) {
 				continue;
 			}
@@ -392,7 +457,7 @@ async function getSyncChildrenData(t, parentShortLink, currentData) {
  *         }
  * }
  */
-async function collectChildrenDataToSync(t, checklistId, checkItems, parentShortLink, currentData) {
+async function collectChildrenDataToSyncDeprecated(t, checklistId, checkItems, parentShortLink, currentData) {
 	let newData = {
 		checklistId:  checklistId,
 		shortLinks:   [],
@@ -615,7 +680,7 @@ async function addParent(t, parentCard) {
 	
 	if (parentCard.idBoard !== undefined && parentCard.idBoard !== t.getContext().board) {
 		// use organization-level plugindata to store parent data for cross-board relations
-		queueSyncingChildren(t, parentCard.id);
+		queueSyncingChildren(t, parentCard.id, checklistId);
 	}
 	else {
 		storeChild(t, checklistId, childCard, checkItem, parentCard.id);
@@ -704,7 +769,7 @@ async function removeParent(t, parentData) {
 	const parentCard = await getCardByIdOrShortLink(t, parentData.shortLink);
 	if (parentCard.idBoard !== undefined && parentCard.idBoard !== t.getContext().board) {
 		// use organization-level plugindata to store parent data for cross-board relations
-		queueSyncingChildren(t, parentCard.id);
+		queueSyncingChildren(t, parentCard.id, checklistId);
 	}
 	else {
 		clearStoredChild(t, childCard.shortLink, parentCard.id);
@@ -858,8 +923,8 @@ function processQueue(t, pluginData) {
 	});
 	
 	// process cross-board queue to add children to parents
-	t.get('organization', 'shared', 'sync-children-' + t.getContext().card, false).then(function(shouldSyncChildren) {
-		if (shouldSyncChildren === false) {
+	t.get('organization', 'shared', 'sync-children-' + t.getContext().card).then(function(syncChildrenChecklistId) {
+		if (syncChildrenChecklistId === undefined) {
 			return;
 		}
 		
@@ -872,15 +937,29 @@ function processQueue(t, pluginData) {
 			
 			t.remove('organization', 'shared', 'sync-children-' + t.getContext().card);
 			
-			getSyncChildrenData(t, parentCard.shortLink, childrenData).then(function(newData) {
-				storeChildren(t, newData);
-			})
-			.catch(function(error) {
-				console.warn('Error processing queue to sync children', error);
-				t.alert({
-					message: 'Something went wrong adding the task, try creating the relationship again.',
+			if (syncChildrenChecklistId === true) {
+				// @deprecated old version way of adding cross-board children
+				getSyncChildrenDataDeprecated(t, parentCard.shortLink, childrenData).then(function(newData) {
+					storeChildren(t, newData);
+				})
+				.catch(function(error) {
+					console.warn('Error processing queue to sync children', error);
+					t.alert({
+						message: 'Something went wrong adding the task, try creating the relationship again.',
+					});
 				});
-			});
+			}
+			else {
+				getSyncChildrenData(t, syncChildrenChecklistId, parentCard.shortLink).then(function(newData) {
+					storeChildren(t, newData);
+				})
+				.catch(function(error) {
+					console.warn('Error processing queue to sync children', error);
+					t.alert({
+						message: 'Something went wrong adding the task, try creating the relationship again.',
+					});
+				});
+			}
 		});
 	});
 }
@@ -1073,8 +1152,8 @@ function storeChildren(t, childrenData, contextCardId='card') {
  * @param  {object} t            without context
  * @param  {string} parentCardId
  */
-function queueSyncingChildren(t, parentCardId) {
-	t.set('organization', 'shared', 'sync-children-' + parentCardId, true);
+function queueSyncingChildren(t, parentCardId, checklistId) {
+	t.set('organization', 'shared', 'sync-children-' + parentCardId, checklistId);
 }
 
 /**
