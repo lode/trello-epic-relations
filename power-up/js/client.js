@@ -1488,17 +1488,9 @@ async function showQueueDebug(t) {
 			
 			let queue = [];
 			let misc  = [];
-			
-			let key;
-			let value;
-			let cardId;
-			let type;
-			let card;
-			
 			for (let [key, value] of Object.entries(pluginData)) {
-				
 				if (key.includes('sync-children-') || key.includes('sync-parent-')) {
-					[, type, cardId] = key.split('-');
+					let [, type, cardId] = key.split('-');
 					
 					try {
 						let card = await getCardByIdOrShortLink(t, cardId, {board: true, list: true});
