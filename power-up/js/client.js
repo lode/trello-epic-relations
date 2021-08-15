@@ -7,7 +7,7 @@ const FAVICON      = CDN_BASE_URL + 'favicon.png';
 const ICON_UP      = CDN_BASE_URL + 'icon-up.png';
 const ICON_DOWN    = CDN_BASE_URL + 'icon-down.png';
 const LIST_MAXIMUM = 10;
-const SHOW_DEBUG   = true;
+const SHOW_DEBUG   = false;
 
 /**
  * @param  {string}           cardUrl
