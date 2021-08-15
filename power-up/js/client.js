@@ -27,6 +27,7 @@ function getCardShortLinkFromUrl(cardUrl) {
 /**
  * @param  {object} t                 without context
  * @param  {string} cardIdOrShortLink
+ * @param  {object} extraFields
  * @return {Promise} => {object} card {
  *         @var {string} id
  *         @var {string} name
@@ -35,21 +36,19 @@ function getCardShortLinkFromUrl(cardUrl) {
  *         @var {string} idBoard
  * }
  */
-async function getCardByIdOrShortLink(t, cardIdOrShortLink) {
+async function getCardByIdOrShortLink(t, cardIdOrShortLink, extraFields) {
 	try {
-		const response = await window.Trello.get('cards/' + cardIdOrShortLink + '?fields=id,name,url,shortLink,idBoard', {}, null, function(error) {
+		let url = 'cards/' + cardIdOrShortLink + '?fields=id,name,url,shortLink,idBoard';
+		if (extraFields !== undefined) {
+			const extraQuery = new URLSearchParams(extraFields);
+			url += '&' + extraQuery.toString();
+		}
+		
+		return window.Trello.get(url, {}, null, function(error) {
 			t.alert({
 				message: JSON.stringify(error, null, '\t'),
 			});
 		});
-		
-		return {
-			id:        response.id,
-			name:      response.name,
-			url:       response.url,
-			shortLink: response.shortLink,
-			idBoard:   response.idBoard,
-		};
 	}
 	catch (error) {
 		t.alert({
@@ -1590,7 +1589,7 @@ function showRemoveChildrenForm(t, childrenData) {
  * @param  {object} t context
  * @return {Promise}
  */
-function showDebug(t) {
+function showCardDebug(t) {
 	return t.popup({
 		title: 'Debug EPIC relation',
 		items: async function(t) {
@@ -1646,6 +1645,94 @@ function showDebug(t) {
 }
 
 /**
+ * @param  {object} t context
+ * @return {Promise}
+ */
+async function showQueueDebug(t) {
+	const isAuthorized = await initializeAuthorization(t);
+	if (isAuthorized === false) {
+		throw new Error('not authorized to sync');
+	}
+	
+	return t.popup({
+		title: 'Debug EPIC relation',
+		items: async function(t) {
+			const pluginData = await t.get('organization', 'shared');
+			
+			let queue = [];
+			let misc  = [];
+			
+			let key;
+			let value;
+			let cardId;
+			let type;
+			let card;
+			
+			for (let [key, value] of Object.entries(pluginData)) {
+				
+				if (key.includes('sync-children-') || key.includes('sync-parent-')) {
+					[, type, cardId] = key.split('-');
+					
+					try {
+						let card = await getCardByIdOrShortLink(t, cardId, {board: true, list: true});
+						queue.push({text: '- [' + card.board.name + ' / ' + card.list.name + '] ' + card.name + ': sync ' + type});
+					}
+					catch (error) {
+						queue.push({text: '- ' + cardId + ': ' + type});
+					}
+				}
+				else {
+					misc.push({text: '- ' + key + ': ' + value});
+				}
+			}
+			
+			let items = [];
+			
+			if (queue.length === 0) {
+				items.push({text: 'Queue: empty'});
+			}
+			else {
+				items.push({text: 'Queue:'});
+				items.push(...queue);
+			}
+			
+			if (misc.length === 0) {
+				items.push({text: 'Misc: empty'});
+			}
+			else {
+				items.push({text: 'Misc:'});
+				items.push(...misc);
+			}
+			
+			if (queue.length > 0 || misc.length > 0) {
+				items.push({
+					text: '× Remove all cross-board keys',
+					callback: function(t) {
+						t.popup({
+							type:         'confirm',
+							title:        'Remove all cross-board keys',
+							message:      'This will break cross-board relationships which were started from one board, but never opened on the other board.',
+							confirmStyle: 'danger',
+							confirmText:  'Delete it all, I\'m sure!',
+							cancelText:   'Never mind',
+							onConfirm:    function(t) {
+								for (let [key,] of Object.entries(pluginData)) {
+									t.remove('organization', 'shared', key);
+								}
+								
+								t.closePopup();
+							},
+						});
+					},
+				});
+			}
+			
+			return items;
+		},
+	});
+}
+
+/**
  * @param  {object} t without context
  * @return {bool}
  */
@@ -1679,6 +1766,20 @@ function startAuthorization(t) {
 }
 
 TrelloPowerUp.initialize({
+	'board-buttons': function(t, options) {
+		if (SHOW_DEBUG === false) {
+			return;
+		}
+		
+		return [
+			{
+				text:      'Debug',
+				icon:      FAVICON,
+				condition: 'edit',
+				callback:  showQueueDebug,
+			}
+		];
+	},
 	'card-buttons': function(t) {
 		return initializeAuthorization(t).then(function(isAuthorized) {
 			if (isAuthorized === false) {
@@ -1705,7 +1806,7 @@ TrelloPowerUp.initialize({
 					text:      'Debug',
 					icon:      FAVICON,
 					condition: 'edit',
-					callback:  showDebug,
+					callback:  showCardDebug,
 				});
 			}
 			

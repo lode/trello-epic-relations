@@ -25,6 +25,7 @@ The power-up isn't published/listed yet. You'll need to install it as a custom p
 - On the baic information tab, fill:
 	- Symbol: `https://www.lodeclaassen.nl/trello-epic-relations/power-up/favicon.png`
 - On the permissions tab, enable:
+	- `board-buttons` (optional)
 	- `card-badges`
 	- `card-buttons`
 	- `card-detail-badges`
